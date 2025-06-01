@@ -18,17 +18,16 @@ HUSKYLENS : 0x32
 
 /*
 1. Huskylens QR, object 학습시키기 (참고 : https://blog.naver.com/icbanq/223079420765)
-2. setMotorInvert 하면 엔코더 데이터 값도 음수로 들어오는지 확인해야함
+2. setMotorInvert 하면 엔코더 값도 음수로 들어오는지 확인해야함
 3. 휠 간 거리 측정
 4. 센서 거리 측정
 5. prizm.PrizmEnd 주석풀기
 6. 거리 오차 테스트
 7. 가속도 ?
-
-노드 몇 개를 생성하고, 그 노드로 이동하기 ??
+8. ToF XSHUT 핀들 프리즘에 맞게 다시 써야함
 */
 
-//조건부 이동 함수
+//moveStraightUntil
 enum CmdOp { GE, LE, GT, LT, EQ };
 /*
   GE : >=
@@ -38,8 +37,11 @@ enum CmdOp { GE, LE, GT, LT, EQ };
   EQ : ==
 */
 
-/* 센서 / 상태를 반환하는 함수 포인터 타입 */
-typedef float (*ValueFn)();      // 예: readFrontToF(), [](){ return x_mm; }
+//moveStraightUntil
+typedef float (*ValueFn)(); // 예: readFrontToF(), [](){ return x_mm; }
+
+//moveStraight, turnInPlace, moveArc
+enum TaskMode { IDLE, STRAIGHT, TURN, ARC };
 
 
 #include <VL53L0X.h> //pololu
@@ -112,9 +114,8 @@ void updateOdom()
   interrupts();
 }
 
-//거리, 각도를 목표로 하는 이동함수
-enum TaskMode { IDLE, STRAIGHT, TURN, ARC };
 
+//거리, 각도를 목표로 하는 이동함수용
 struct MotionTask {
   TaskMode mode = IDLE;
   long  tgtL = 0, tgtR = 0;       // 목표 엔코더 tick
@@ -182,18 +183,15 @@ void moveArc(float R_mm, float theta_deg, int spdDeg = 300)
 }
 
 
-
-
-
-/* 새 함수 : 조건 코드와 목표값을 인자로 받음 */
+// 조건부 전/후진 함수
 void moveStraightUntil(int16_t speedDeg, ValueFn curValFn, CmdOp op, float refVal)
 {
     prizm.setMotorSpeeds(speedDeg, speedDeg);
 
     while (true) {
-        controller.run();                      // 오도메트리·센서 유지
+        controller.run(); // 오도메트리, 센서 유지
 
-        float cur = curValFn();                // ① 매 주기 현재값 읽기
+        float cur = curValFn(); //매 주기 현재값 읽기
         bool stop = false;
         switch(op){
           case GE: 
