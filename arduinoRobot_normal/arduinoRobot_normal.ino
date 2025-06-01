@@ -23,9 +23,23 @@ HUSKYLENS : 0x32
 4. 센서 거리 측정
 5. prizm.PrizmEnd 주석풀기
 6. 거리 오차 테스트
+7. 가속도 ?
 
 노드 몇 개를 생성하고, 그 노드로 이동하기 ??
 */
+
+//조건부 이동 함수
+enum CmdOp { GE, LE, GT, LT, EQ };
+/*
+  GE : >=
+  LE : <=
+  GT : >
+  LT : <
+  EQ : ==
+*/
+
+/* 센서 / 상태를 반환하는 함수 포인터 타입 */
+typedef float (*ValueFn)();      // 예: readFrontToF(), [](){ return x_mm; }
 
 
 #include <VL53L0X.h> //pololu
@@ -69,7 +83,7 @@ const float rightToF_offset = 0; // 로봇 중심에서 우측 센서까지의 �
 
 
 
-// 이동 관련
+//x, y, theta 업데이트
 void updateOdom()
 {
   long curL = prizm.readEncoderCount(1);
@@ -98,7 +112,7 @@ void updateOdom()
   interrupts();
 }
 
-
+//거리, 각도를 목표로 하는 이동함수
 enum TaskMode { IDLE, STRAIGHT, TURN, ARC };
 
 struct MotionTask {
@@ -165,6 +179,42 @@ void moveArc(float R_mm, float theta_deg, int spdDeg = 300)
 
   task.mode = ARC;
   prizm.setMotorSpeeds(task.spL, task.spR);
+}
+
+
+
+
+
+/* 새 함수 : 조건 코드와 목표값을 인자로 받음 */
+void moveStraightUntil(int16_t speedDeg, ValueFn curValFn, CmdOp op, float refVal)
+{
+    prizm.setMotorSpeeds(speedDeg, speedDeg);
+
+    while (true) {
+        controller.run();                      // 오도메트리·센서 유지
+
+        float cur = curValFn();                // ① 매 주기 현재값 읽기
+        bool stop = false;
+        switch(op){
+          case GE: 
+            stop = (cur >= refVal); 
+            break;
+          case LE: 
+            stop = (cur <= refVal); 
+            break;
+          case GT: 
+            stop = (cur > refVal); 
+            break;
+          case LT: 
+            stop = (cur < refVal); 
+            break;
+          case EQ: 
+            stop = (fabs(cur - refVal) < 1e-3); 
+            break;
+        }
+        if (stop) break;
+    }
+    prizm.setMotorSpeeds(0,0);
 }
 
 
@@ -333,6 +383,8 @@ void setup() {
 void loop() {
   controller.run(); //odometry update
 
+  setFirstPose(); // 초기 theta는 반드시 90도로 맞추어야함
+
 
   //거리센서 테스트용
   Serial.print(F("Front Distance [mm] : "));
@@ -382,6 +434,11 @@ void loop() {
 
   moveStraight(1000, 720);
   turnInPlace(90, 720);
+
+
+  //조건부 이동 함수
+  moveStraightUntil(720, readFrontToF(), LE, 100); // readFrontTof <= 100이 참이될 때까지 720 deg/s의 속도로 전진
+  moveStraightUntil(720, [](){ return x_mm; }, LE, 3150.0); // X <= 3150 일 때까지 전진
 
 
 
