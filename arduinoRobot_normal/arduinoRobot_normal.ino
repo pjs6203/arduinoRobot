@@ -18,7 +18,7 @@ HUSKYLENS : 0x32
 
 /*
 1. Huskylens QR, object 학습시키기 (참고 : https://blog.naver.com/icbanq/223079420765)
-2. setMotorInvert 하면 엔코더 값도 음수로 들어오는지 확인해야함
+2. setMotorInvert 하면 엔코더 값도 음수로 들어오는지 확인해야함 >> 음수로 들어옴
 3. 휠 간 거리 측정
 4. 센서 거리 측정
 5. prizm.PrizmEnd 주석풀기
@@ -52,14 +52,14 @@ enum TaskMode { IDLE, STRAIGHT, TURN, ARC };
 #include <ThreadController.h> //ivanseidel
 
 // address we will assign if dual sensor is present
-#define frontToF_ADDRESS 0x30
-#define rightToF_ADDRESS 0x31
-#define frontToF_XSHUT 6
-#define rightToF_XSHUT 7
+#define distanceSensorFront_ADDRESS 0x30
+#define distanceSensorRight_ADDRESS 0x31
+#define distanceSensorFront_XSHUT 6
+#define distanceSensorRight_XSHUT 7
 
 // objects for the vl53l0x
-VL53L0X frontToF = VL53L0X();
-VL53L0X rightToF = VL53L0X();
+VL53L0X distanceSensorFront;
+VL53L0X distanceSensorRight;
 PRIZM prizm;  
 ThreadController controller;
 Thread odomThread;
@@ -78,11 +78,6 @@ const int   TICKS_REV = 1440;                // 1회전 당 엔코더 틱 [ticks
 const float MM_PER_TICK = WHEEL_C / TICKS_REV;
 const int   world_X = 3400;
 const int   world_Y = 1400; 
-
-//sensor offset [mm]
-const float frontToF_offset = 0; // 로봇 중심에서 전방 센서까지의 거리 [mm]
-const float rightToF_offset = 0; // 로봇 중심에서 우측 센서까지의 거리 [mm]
-
 
 
 //x, y, theta 업데이트
@@ -216,108 +211,54 @@ void moveStraightUntil(int16_t speedDeg, ValueFn curValFn, CmdOp op, float refVa
 }
 
 
-
-
-void ToF_setID_LongRangeMode() {
-
-  pinMode(frontToF_XSHUT, OUTPUT);
-  pinMode(rightToF_XSHUT, OUTPUT);
-
-  digitalWrite(frontToF_XSHUT, LOW);
-  digitalWrite(rightToF_XSHUT, LOW);
+void distanceSensor_init(){
+  pinMode(distanceSensorFront_XSHUT, OUTPUT);
+  pinMode(distanceSensorRight_XSHUT, OUTPUT);
+  digitalWrite(distanceSensorFront_XSHUT, LOW);
+  digitalWrite(distanceSensorRight_XSHUT, LOW);
 
   Serial.println(F("Both in reset mode...(pins are low)")); 
   Serial.println(F("Starting..."));
 
-  // all reset
-  digitalWrite(frontToF_XSHUT, LOW);    
-  digitalWrite(rightToF_XSHUT, LOW);
-  delay(10);
+  delay(50);
+  digitalWrite(distanceSensorFront_XSHUT, HIGH);
+  delay(50);
 
-  // all unreset
-  digitalWrite(frontToF_XSHUT, HIGH);
-  digitalWrite(rightToF_XSHUT, HIGH);
-  delay(10);
-
-  // activating frontToF and resetting rightToF
-  digitalWrite(frontToF_XSHUT, HIGH);
-  digitalWrite(rightToF_XSHUT, LOW);
-
-  // initing frontToF
-  frontToF.init();
-  frontToF.setAddress(frontToF_ADDRESS);
-  frontToF.setTimeout(500);
-
-  // activating rightToF
-  digitalWrite(rightToF_XSHUT, HIGH);
-
-  //initing rightToF
-  rightToF.init();
-  rightToF.setAddress(rightToF_ADDRESS);
-  frontToF.setTimeout(500);
-
-  //change parameters (long range mode)
-  frontToF.setVcselPulsePeriod(VL53L0X::VcselPeriodPreRange, 18);
-  frontToF.setVcselPulsePeriod(VL53L0X::VcselPeriodFinalRange, 14);
-  frontToF.setMeasurementTimingBudget(50000);   // 50 ms
-  frontToF.setSignalRateLimit(0.1);
-
-  rightToF.setVcselPulsePeriod(VL53L0X::VcselPeriodPreRange, 18);
-  rightToF.setVcselPulsePeriod(VL53L0X::VcselPeriodFinalRange, 14);
-  rightToF.setMeasurementTimingBudget(50000);   // 50 ms
-  rightToF.setSignalRateLimit(0.1);
-
+  if (!distanceSensorFront.init())//try to initilise the sensor
+  {
+      //Sensor does not respond within the timeout time
+      Serial.println("distanceSensorFront is not responding, check your wiring");
   }
+  else
+  {
+    distanceSensorFront.setAddress(distanceSensorFront_ADDRESS);
+    distanceSensorFront.setMeasurementTimingBudget(33000);
+  }  
 
-
-  void ToF_setID_NormalMode() {
-
-  pinMode(frontToF_XSHUT, OUTPUT);
-  pinMode(rightToF_XSHUT, OUTPUT);
-
-  digitalWrite(frontToF_XSHUT, LOW);
-  digitalWrite(rightToF_XSHUT, LOW);
-
-  Serial.println(F("Both in reset mode...(pins are low)")); 
-  Serial.println(F("Starting..."));
-
-  // all reset
-  digitalWrite(frontToF_XSHUT, LOW);    
-  digitalWrite(rightToF_XSHUT, LOW);
-  delay(10);
-  // all unreset
-  digitalWrite(frontToF_XSHUT, HIGH);
-  digitalWrite(rightToF_XSHUT, HIGH);
-  delay(10);
-
-  // activating frontToF and resetting rightToF
-  digitalWrite(frontToF_XSHUT, HIGH);
-  digitalWrite(rightToF_XSHUT, LOW);
-
-  // initing frontToF
-  frontToF.init();
-  frontToF.setAddress(frontToF_ADDRESS);
-  frontToF.setTimeout(500);
-
-  // activating rightToF
-  digitalWrite(rightToF_XSHUT, HIGH);
-
-  //initing rightToF
-  rightToF.init();
-  rightToF.setAddress(rightToF_ADDRESS);
-  frontToF.setTimeout(500);
+  delay(50);
+  digitalWrite(distanceSensorRight_XSHUT, HIGH);
+  delay(50);
+  if (!distanceSensorRight.init())//try to initilise the sensor
+  {
+      //Sensor does not respond within the timeout time
+      Serial.println("distanceSensorRight is not responding, check your wiring");
   }
+  else
+  {
+    distanceSensorRight.setAddress(distanceSensorRight_ADDRESS);
+    distanceSensorRight.setMeasurementTimingBudget(33000);
+  }  
+}
 
 
 //read VL53L0X Distance Sensor 
-//센서의 위치를 고려한 거리를 리턴함
 //2000[mm] 이상은 Out Of Range임
-int16_t readFrontToF(){
-  return frontToF.readRangeSingleMillimeters() - frontToF_offset;
+int16_t readDistanceSensorFront(){
+  return distanceSensorFront.readRangeSingleMillimeters();
 }
 
-int16_t readRightToF(){
-  return rightToF.readRangeSingleMillimeters() - rightToF_offset;
+int16_t readDistanceSensorRight(){
+  return distanceSensorRight.readRangeSingleMillimeters();
 }
 
 
@@ -326,8 +267,8 @@ int16_t readRightToF(){
 
 void setFirstPose(){ // 초기 theta값은 90도로 가정
   th_deg = 90;
-  x_mm = world_X - readRightToF();
-  y_mm = world_Y - readFrontToF();
+  x_mm = world_X - readDistanceSensorRight();
+  y_mm = world_Y - readDistanceSensorFront();
 }
 
 //setX, setY, setTheta, setFirsePose ... >> 입력할경우
@@ -367,7 +308,7 @@ void setup() {
 
   //ToF Distance Sensor
   //ToF_setID_NormalMode(); // 약 1m (1000mm) 측정 가능
-  ToF_setID_LongRangeMode(); // 약 1.5m (1500mm) 측정 가능
+  //ToF_setID_LongRangeMode(); // 약 1.5m (1500mm) 측정 가능
 
   //odometry thread
   odomThread.onRun(updateOdom);
@@ -381,20 +322,24 @@ void setup() {
 void loop() {
   controller.run(); //odometry update
 
-  setFirstPose(); // 초기 theta는 반드시 90도로 맞추어야함
+  //setFirstPose(); // 초기 theta는 반드시 90도로 맞추어야함
 
+  distanceSensor_init(); //
+
+
+while(true){
 
   //거리센서 테스트용
   Serial.print(F("Front Distance [mm] : "));
-  Serial.print(readFrontToF());
+  Serial.print(readDistanceSensorFront());
   Serial.print(F(" "));
   Serial.print(F("Right Distance [mm] : "));
-  Serial.println(readRightToF()); 
-  delay(10);
+  Serial.println(readDistanceSensorRight()); 
+  delay(50);
 
+}
 
-
-
+/*
   // 테스트 동작을 해보아요
   // moveStraight(mm, speed(-720 ~ 720))
   // turnInPlace(deg, deg/s(-720 ~ 720))
@@ -435,14 +380,14 @@ void loop() {
 
 
   //조건부 이동 함수
-  moveStraightUntil(720, readFrontToF(), LE, 100); // readFrontTof <= 100이 참이될 때까지 720 deg/s의 속도로 전진
+  moveStraightUntil(720, readDistanceSensorFront(), LE, 100); // readDistanceSensorFront <= 100이 참이될 때까지 720 deg/s의 속도로 전진
   moveStraightUntil(720, [](){ return x_mm; }, LE, 3150.0); // X <= 3150 일 때까지 전진
 
 
 
   //prizm.PrizmEnd();  //나중에 활성화하기
 
-
+*/
 
 
   /*
@@ -455,5 +400,5 @@ void loop() {
   Serial.print(F("Theta : "));
   Serial.println(th_deg);
   */
-
+  
 }
