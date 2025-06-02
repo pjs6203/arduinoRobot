@@ -43,7 +43,6 @@ typedef float (*ValueFn)(); // 예: readFrontToF(), [](){ return x_mm; }
 //moveStraight, turnInPlace, moveArc
 enum TaskMode { IDLE, STRAIGHT, TURN, ARC };
 
-
 #include <VL53L0X.h> //pololu
 #include <HUSKYLENS.h>
 #include <PRIZM.h>
@@ -51,22 +50,20 @@ enum TaskMode { IDLE, STRAIGHT, TURN, ARC };
 #include <Thread.h> //ivanseidel
 #include <ThreadController.h> //ivanseidel
 
-// address we will assign if dual sensor is present
 #define distanceSensorFront_ADDRESS 0x30
 #define distanceSensorRight_ADDRESS 0x31
 #define distanceSensorFront_XSHUT 6
 #define distanceSensorRight_XSHUT 7
 
-// objects for the vl53l0x
+// objects
 VL53L0X distanceSensorFront;
 VL53L0X distanceSensorRight;
 PRIZM prizm;  
 ThreadController controller;
 Thread odomThread;
 HUSKYLENS huskylens;
-void printResult(HUSKYLENSResult result);
 
-//robot's state
+//robot state
 volatile float x_mm = 0, y_mm = 0, th_deg = 0;
 long prevL=0, prevR=0;
 
@@ -78,220 +75,6 @@ const int   TICKS_REV = 1440;                // 1회전 당 엔코더 틱 [ticks
 const float MM_PER_TICK = WHEEL_C / TICKS_REV;
 const int   world_X = 3400;
 const int   world_Y = 1400; 
-
-
-//x, y, theta 업데이트
-void updateOdom()
-{
-  long curL = prizm.readEncoderCount(1);
-  long curR = prizm.readEncoderCount(2);
-  long dnL  = curL - prevL;
-  long dnR  = curR - prevR;
-  prevL = curL;  prevR = curR;
-
-  /* ① 그대로 rad 단위로 계산 */
-  float dsL   = (PI*WHEEL_D) * dnL / TICKS_REV;
-  float dsR   = (PI*WHEEL_D) * dnR / TICKS_REV;
-  float ds    = 0.5f * (dsR + dsL);
-  float dth_r = (dsR - dsL) / WHEEL_BASE;          // Δθ [rad]
-
-  /* ② 삼각함수용 중간각(rad) */
-  float midTh_r = (th_deg * PI/180.0f) + 0.5f * dth_r;
-
-  /* ③ 누적 */
-  noInterrupts();
-  x_mm  += ds * cosf(midTh_r);
-  y_mm  += ds * sinf(midTh_r);
-  th_deg += dth_r * 180.0f / PI;                    // rad→deg
-
-  if      (th_deg >  180) th_deg -= 360;
-  else if (th_deg < -180) th_deg += 360;
-  interrupts();
-}
-
-
-//거리, 각도를 목표로 하는 이동함수용
-struct MotionTask {
-  TaskMode mode = IDLE;
-  long  tgtL = 0, tgtR = 0;       // 목표 엔코더 tick
-  int16_t spL = 0,  spR = 0;      // 모터 속도 [deg/s]
-} task;
-
-/* mm·deg → 엔코더 tick 변환 */
-inline long mm2tick(float mm)   { return lround(mm / MM_PER_TICK); }
-inline long deg2tick(float deg) { return mm2tick( (PI*WHEEL_BASE)*deg/360.0 ); }
-
-
-//직선이동
-void moveStraight(float mm, int spdDeg = 360)
-{
-  prizm.resetEncoders();   prevL = prevR = 0;
-
-  long ticks  = mm2tick(mm);
-  task.tgtL   = task.tgtR = ticks;
-  task.spL    = task.spR  = (mm >= 0) ?  spdDeg : -spdDeg;
-  task.mode   = STRAIGHT;
-
-  prizm.setMotorSpeeds(task.spL, task.spR);   // 좌·우 동시에
-}
-
-
-
-//회전
-void turnInPlace(float deg, int spdDeg = 300)
-{
-  prizm.resetEncoders();   prevL = prevR = 0;
-
-  long t      = deg2tick(deg);       // +CCW
-  task.tgtL   = -t;                  // L−, R+
-  task.tgtR   =  t;
-  task.spL    = (deg >= 0) ? -spdDeg :  spdDeg;
-  task.spR    = -task.spL;
-  task.mode   = TURN;
-
-  prizm.setMotorSpeeds(task.spL, task.spR);
-}
-
-
-// 원호 주행
-void moveArc(float R_mm, float theta_deg, int spdDeg = 300)
-/* R_mm>0 : 좌회전,  R_mm<0 : 우회전 */
-{
-  prizm.resetEncoders();  prevL = prevR = 0;
-
-  float arcIn_mm  = PI * fabs(R_mm) * fabs(theta_deg) / 180.0;
-  long  tickIn    = mm2tick(arcIn_mm);
-  long  tickOut   = lround(tickIn * (fabs(R_mm)+WHEEL_BASE) / fabs(R_mm));
-
-  if (R_mm > 0) { task.tgtL =  tickIn;  task.tgtR =  tickOut; }
-  else          { task.tgtL = -tickOut; task.tgtR = -tickIn;  }
-
-  /* 속도 비례(간단) */
-  float ratio  = (float)abs(task.tgtR) / abs(task.tgtL);
-  task.spL = (task.tgtL >= 0) ?  spdDeg : -spdDeg;
-  task.spR = task.spL * ratio;
-  if (task.spR >  720) task.spR =  720;
-  if (task.spR < -720) task.spR = -720;
-
-  task.mode = ARC;
-  prizm.setMotorSpeeds(task.spL, task.spR);
-}
-
-
-// 조건부 전/후진 함수
-void moveStraightUntil(int16_t speedDeg, ValueFn curValFn, CmdOp op, float refVal)
-{
-    prizm.setMotorSpeeds(speedDeg, speedDeg);
-
-    while (true) {
-        controller.run(); // 오도메트리, 센서 유지
-
-        float cur = curValFn(); //매 주기 현재값 읽기
-        bool stop = false;
-        switch(op){
-          case GE: 
-            stop = (cur >= refVal); 
-            break;
-          case LE: 
-            stop = (cur <= refVal); 
-            break;
-          case GT: 
-            stop = (cur > refVal); 
-            break;
-          case LT: 
-            stop = (cur < refVal); 
-            break;
-          case EQ: 
-            stop = (fabs(cur - refVal) < 1e-3); 
-            break;
-        }
-        if (stop) break;
-    }
-    prizm.setMotorSpeeds(0,0);
-}
-
-
-void distanceSensor_init(){
-  pinMode(distanceSensorFront_XSHUT, OUTPUT);
-  pinMode(distanceSensorRight_XSHUT, OUTPUT);
-  digitalWrite(distanceSensorFront_XSHUT, LOW);
-  digitalWrite(distanceSensorRight_XSHUT, LOW);
-
-  Serial.println(F("Both in reset mode...(pins are low)")); 
-  Serial.println(F("Starting..."));
-
-  delay(50);
-  digitalWrite(distanceSensorFront_XSHUT, HIGH);
-  delay(50);
-
-  if (!distanceSensorFront.init())//try to initilise the sensor
-  {
-      //Sensor does not respond within the timeout time
-      Serial.println("distanceSensorFront is not responding, check your wiring");
-  }
-  else
-  {
-    distanceSensorFront.setAddress(distanceSensorFront_ADDRESS);
-    distanceSensorFront.setMeasurementTimingBudget(33000);
-  }  
-
-  delay(50);
-  digitalWrite(distanceSensorRight_XSHUT, HIGH);
-  delay(50);
-  if (!distanceSensorRight.init())//try to initilise the sensor
-  {
-      //Sensor does not respond within the timeout time
-      Serial.println("distanceSensorRight is not responding, check your wiring");
-  }
-  else
-  {
-    distanceSensorRight.setAddress(distanceSensorRight_ADDRESS);
-    distanceSensorRight.setMeasurementTimingBudget(33000);
-  }  
-}
-
-
-//read VL53L0X Distance Sensor 
-//2000[mm] 이상은 Out Of Range임
-int16_t readDistanceSensorFront(){
-  return distanceSensorFront.readRangeSingleMillimeters();
-}
-
-int16_t readDistanceSensorRight(){
-  return distanceSensorRight.readRangeSingleMillimeters();
-}
-
-
-
-
-
-void setFirstPose(){ // 초기 theta값은 90도로 가정
-  th_deg = 90;
-  x_mm = world_X - readDistanceSensorRight();
-  y_mm = world_Y - readDistanceSensorFront();
-}
-
-//setX, setY, setTheta, setFirsePose ... >> 입력할경우
-//updateX, updateY >> 현재 세타값을 기준으로 X Y pose 업데이트
-
-
-
-
-
-int16_t readQRdata(){ // 0 : fail
-  int data = 0;
-  if(!huskylens.request()) return 0;
-  if(!huskylens.isLearned()) return 0; 
-  if(!huskylens.available()) return 0;
-
-  HUSKYLENSResult result = huskylens.read();
-
-  if (result.ID >= 1 && result.ID <= 6) return result.ID;
-  return 0;
-}
-
-
-
 
 void setup() {
   //Serial Port
@@ -306,17 +89,10 @@ void setup() {
   //Huskylens
   huskylens.begin(Wire);
 
-  //ToF Distance Sensor
-  //ToF_setID_NormalMode(); // 약 1m (1000mm) 측정 가능
-  //ToF_setID_LongRangeMode(); // 약 1.5m (1500mm) 측정 가능
-
   //odometry thread
   odomThread.onRun(updateOdom);
   odomThread.setInterval(20);   // 50 Hz
   controller.add(&odomThread);
-
-
-
 }
 
 void loop() {
@@ -324,11 +100,11 @@ void loop() {
 
   //setFirstPose(); // 초기 theta는 반드시 90도로 맞추어야함
 
-  distanceSensor_init(); //
+  //setup() 함수 내에 존재하면 I2C 주소 변경 에러로 인해 loop문 내에 작성함
+  distanceSensor_init(); 
 
 
 while(true){
-
   //거리센서 테스트용
   Serial.print(F("Front Distance [mm] : "));
   Serial.print(readDistanceSensorFront());
