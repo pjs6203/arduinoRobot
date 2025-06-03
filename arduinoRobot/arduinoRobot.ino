@@ -42,7 +42,7 @@ HUSKYLENS : 0x32
 */
 
 /*
-1. Huskylens QR, object 학습시키기 (참고 : https://blog.naver.com/icbanq/223079420765)
+1. Huskylens QR, 팔레트 학습시키기 (참고 : https://blog.naver.com/icbanq/223079420765)
 2. setMotorInvert 하면 엔코더 값도 음수로 들어오는지 확인해야함 >> 음수로 들어옴
 3. 휠 간 거리 측정
 4. 센서 거리 측정
@@ -73,17 +73,12 @@ enum CmdOp { GE, LE, GT, LT, EQ };
 #include <Thread.h> //ivanseidel
 #include <ThreadController.h> //ivanseidel
 
-#define distanceSensorFront_ADDRESS 0x30
-#define distanceSensorRight_ADDRESS 0x31
-#define distanceSensorFront_XSHUT 6
-#define distanceSensorRight_XSHUT 7
-
 // objects
-VL53L0X distanceSensorFront;
-VL53L0X distanceSensorRight;
-PRIZM prizm;  
+PRIZM prizm;
 ThreadController controller;
 Thread odomThread;
+VL53L0X distanceSensorFront;
+VL53L0X distanceSensorRight;
 HUSKYLENS huskylens;
 
 //state
@@ -99,7 +94,8 @@ const float MM_PER_TICK = WHEEL_C / TICKS_REV;
 const int   world_X = 3400;
 const int   world_Y = 1400; 
 
-void setup() {
+void setup() 
+{
   //Serial Port
   Serial.begin(115200);
 
@@ -119,26 +115,23 @@ void setup() {
   controller.add(&odomThread);
 }
 
-void loop() {
+void loop() 
+{
   controller.run(); //odometry update
-
   //setFirstPose(); // 초기 theta는 반드시 90도로 맞추어야함
-
-  //setup() 함수 내에 존재하면 I2C 주소 변경 에러로 인해 loop문 내에 작성함
   distanceSensor_init(); 
 
-
-while(true){
-  //거리센서 테스트용
-  Serial.print(F("Front Distance [mm] : "));
-  Serial.print(readDistanceSensorFront());
-  delay(5);
-  Serial.print(F(" "));
-  Serial.print(F("Right Distance [mm] : "));
-  Serial.println(readDistanceSensorRight()); 
-  delay(50);
-
-}
+  while(true)
+  {
+    //거리센서 테스트용
+    Serial.print(F("Front Distance [mm] : "));
+    Serial.print(readDistanceSensorFront());
+    delay(5);
+    Serial.print(F(" "));
+    Serial.print(F("Right Distance [mm] : "));
+    Serial.println(readDistanceSensorRight()); 
+    delay(50);
+  }
 
 /*
   // 테스트 동작을 해보아요

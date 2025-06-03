@@ -65,7 +65,8 @@ void updateOdom()
 
 
 //거리, 각도를 목표로 하는 이동함수용
-struct MotionTask {
+struct MotionTask 
+{
   TaskMode mode = IDLE;
   long  tgtL = 0, tgtR = 0;       // 목표 엔코더 tick
   int16_t spL = 0,  spR = 0;      // 모터 속도 [deg/s]
@@ -162,12 +163,14 @@ void moveStraightUntil(int16_t speedDeg, ValueFn curValFn, CmdOp op, float refVa
 {
     prizm.setMotorSpeeds(speedDeg, speedDeg);
 
-    while (true) {
+    while (true) 
+    {
         controller.run(); // 오도메트리, 센서 유지
 
         float cur = curValFn(); //매 주기 현재값 읽기
         bool stop = false;
-        switch(op){
+        switch(op)
+        {
           case GE: 
             stop = (cur >= refVal); 
             break;
@@ -191,7 +194,8 @@ void moveStraightUntil(int16_t speedDeg, ValueFn curValFn, CmdOp op, float refVa
 
 
 
-void setFirstPose(){ // 로봇의 초기 각도는 90도에 맞추어야 함
+void setFirstPose() // 로봇의 초기 각도는 90도에 맞추어야 함
+{
   th_deg = 90;
   x_mm = world_X - readDistanceSensorRight();
   y_mm = world_Y - readDistanceSensorFront();
