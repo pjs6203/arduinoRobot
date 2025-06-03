@@ -1,5 +1,30 @@
 /*
-[I2C Adress]
+[moving.ino]
+
+updateOdom() //로봇 위치 추적
+moveStraight(float mm, int spdDeg = 360) //전후진
+turnInPlace(float deg, int spdDeg = 300) //회전
+moveArc(float R_mm, float theta_deg, int spdDeg = 300) //원호주행
+moveStraightUntil(int16_t speedDeg, ValueFn curValFn, CmdOp op, float refVal) //전후진 중 특정 조건 도달 시 정지
+setFirstPose() //로봇의 초기 위치 설정
+*/
+
+/*
+[sensor_vl53l0x.ino]
+
+distanceSensor_init() //vl53l0x I2C 주소 재설정 및 파라미터 설정
+readDistanceSensorFront() //전방 거리센서값 읽기
+readDistanceSensorRight() //우측 거리센서값 읽기
+*/
+
+/*
+[sensor_huskylens.ino]
+
+readQRdata() //QR인식
+*/
+
+/*
+[I2C Address]
 PRIZM : 0x01 ~ 0x06 (prizm programming guide 134P 참고)
 frontToF (VL53L0X) : 0x29 -> 0x30
 rightToF (VL53L0X) : 0x29 -> 0x31
@@ -28,6 +53,10 @@ HUSKYLENS : 0x32
 */
 
 //moveStraightUntil
+typedef float (*ValueFn)(); // 예: readFrontToF(), [](){ return x_mm; }
+
+//moveStraight, turnInPlace, moveArc, moveStraightUntil
+enum TaskMode { IDLE, STRAIGHT, TURN, ARC };
 enum CmdOp { GE, LE, GT, LT, EQ };
 /*
   GE : >=
@@ -36,12 +65,6 @@ enum CmdOp { GE, LE, GT, LT, EQ };
   LT : <
   EQ : ==
 */
-
-//moveStraightUntil
-typedef float (*ValueFn)(); // 예: readFrontToF(), [](){ return x_mm; }
-
-//moveStraight, turnInPlace, moveArc
-enum TaskMode { IDLE, STRAIGHT, TURN, ARC };
 
 #include <VL53L0X.h> //pololu
 #include <HUSKYLENS.h>
@@ -63,7 +86,7 @@ ThreadController controller;
 Thread odomThread;
 HUSKYLENS huskylens;
 
-//robot state
+//state
 volatile float x_mm = 0, y_mm = 0, th_deg = 0;
 long prevL=0, prevR=0;
 
@@ -82,6 +105,7 @@ void setup() {
 
   //PRIZM Board
   prizm.PrizmBegin();
+  prizm.setMotorInvert(2,1); //2번 모터를 반전
 
   //I2C
   Wire.begin();
@@ -108,6 +132,7 @@ while(true){
   //거리센서 테스트용
   Serial.print(F("Front Distance [mm] : "));
   Serial.print(readDistanceSensorFront());
+  delay(5);
   Serial.print(F(" "));
   Serial.print(F("Right Distance [mm] : "));
   Serial.println(readDistanceSensorRight()); 

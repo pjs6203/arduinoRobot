@@ -14,7 +14,7 @@ moveArc(float R_mm, float theta_deg, int spdDeg = 300)
   spdDeg(-720 ~ 720)의 속도로 반지름 R_mm, theta_deg 만큼 회전
 
 moveStraightUntil(int16_t speedDeg, ValueFn curValFn, CmdOp op, float refVal)
-  speedDeg(-720 ~ 720)의 속도로 특정 조건에 도달 시 멈춤
+  speedDeg(-720 ~ 720)의 속도로 이동 중 특정 조건이 되면 멈춤
 
   ex:
     moveStraightUntil(720, readDistanceSensorFront(), LE, 100); // readDistanceSensorFront <= 100이 참이될 때까지 720 deg/s의 속도로 전진
@@ -109,7 +109,7 @@ void turnInPlace(float deg, int spdDeg = 300)
 
 // 원호 주행
 void moveArc(float R_mm, float theta_deg, int spdDeg = 300)
-/* R_mm>0 : 좌회전,  R_mm<0 : 우회전 */
+//R_mm>0 : 좌회전,  R_mm<0 : 우회전 
 {
   prizm.resetEncoders();  prevL = prevR = 0;
 
@@ -130,6 +130,31 @@ void moveArc(float R_mm, float theta_deg, int spdDeg = 300)
   task.mode = ARC;
   prizm.setMotorSpeeds(task.spL, task.spR);
 }
+
+void moveVelocity(float v_mm_s, float w_deg_s) {
+  // w를 rad/s로 변환
+  float w_rad_s = w_deg_s * PI / 180.0f;
+  // 바퀴 반발 거리: 로봇 반지름 = WHEEL_BASE / 2
+  float R = WHEEL_BASE / 2.0f;
+  // 좌/우 바퀴의 선형 속도 [mm/s]
+  float vL_mm_s = v_mm_s - w_rad_s * R;
+  float vR_mm_s = v_mm_s + w_rad_s * R;
+  // 바퀴 원주 [mm/rev]
+  float wheelCirc = WHEEL_C;  // = PI * WHEEL_D
+  // 바퀴 회전 속도 [rev/s]
+  float revsL = vL_mm_s / wheelCirc;
+  float revsR = vR_mm_s / wheelCirc;
+  // 모터 속도 단위: deg/s (1 rev = 360 deg)
+  int16_t spL = lround(revsL * 360.0f);
+  int16_t spR = lround(revsR * 360.0f);
+  // 엔코더 카운터 리셋 및 모터 제어 모드 업데이트
+  prizm.resetEncoders();
+  prevL = prevR = 0;
+  task.mode = STRAIGHT;  // 이동 모드(값 상관없이 속도 제어만 함)
+  prizm.setMotorSpeeds(spL, spR);
+}
+
+
 
 
 // 조건부 전/후진 함수
@@ -165,7 +190,8 @@ void moveStraightUntil(int16_t speedDeg, ValueFn curValFn, CmdOp op, float refVa
 }
 
 
-void setFirstPose(){ // 초기 theta값은 90도로 가정
+
+void setFirstPose(){ // 로봇의 초기 각도는 90도에 맞추어야 함
   th_deg = 90;
   x_mm = world_X - readDistanceSensorRight();
   y_mm = world_Y - readDistanceSensorFront();
