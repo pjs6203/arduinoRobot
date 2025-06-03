@@ -41,8 +41,7 @@ void distanceSensor_init(){
 }
 
 
-//read VL53L0X Distance Sensor 
-//2000[mm] 이상은 Out Of Range임
+//read VL53L0X Distance Sensor
 int16_t readDistanceSensorFront(){
   return distanceSensorFront.readRangeSingleMillimeters();
 }
