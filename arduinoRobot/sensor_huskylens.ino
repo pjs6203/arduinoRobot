@@ -1,7 +1,6 @@
 // Huskylens Pro
 // 팔레트 인식도 가능할까 ? ..
 
-
 void printResult(HUSKYLENSResult result);
 
 int16_t readQRdata() //테스트 안 해봄

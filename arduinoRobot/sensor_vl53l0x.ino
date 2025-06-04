@@ -4,8 +4,6 @@
 #define distanceSensorFront_XSHUT 6
 #define distanceSensorRight_XSHUT 7
 
-
-
 void distanceSensor_init()
 {
   //reset
@@ -28,7 +26,7 @@ void distanceSensor_init()
   else
   {
     distanceSensorFront.setAddress(distanceSensorFront_ADDRESS);
-    distanceSensorFront.setMeasurementTimingBudget(200000); //200ms
+    distanceSensorFront.setMeasurementTimingBudget(33000); //200ms
     distanceSensorFront.setSignalRateLimit(0.1);
     distanceSensorFront.setVcselPulsePeriod(VL53L0X::VcselPeriodPreRange, 18);
     distanceSensorFront.setVcselPulsePeriod(VL53L0X::VcselPeriodFinalRange, 14);
@@ -45,7 +43,7 @@ void distanceSensor_init()
   else
   {
     distanceSensorRight.setAddress(distanceSensorRight_ADDRESS);
-    distanceSensorRight.setMeasurementTimingBudget(200000); //200ms
+    distanceSensorRight.setMeasurementTimingBudget(33000); //200ms
     distanceSensorRight.setSignalRateLimit(0.1);
     distanceSensorRight.setVcselPulsePeriod(VL53L0X::VcselPeriodPreRange, 18);
     distanceSensorRight.setVcselPulsePeriod(VL53L0X::VcselPeriodFinalRange, 14);

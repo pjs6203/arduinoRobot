@@ -92,7 +92,9 @@ const float WHEEL_BASE= 100.0;               // 휠 간 거리 [mm] 확인 후 �
 const int   TICKS_REV = 1440;                // 1회전 당 엔코더 틱 [ticks/rev]
 const float MM_PER_TICK = WHEEL_C / TICKS_REV;
 const int   world_X = 3400;
-const int   world_Y = 1400; 
+const int   world_Y = 1400;
+const int   robotHeight = 0; //세로길이, 바꿔야함
+const int   robotWidth = 0; //가로길이, 바꿔야함
 
 void setup() 
 {

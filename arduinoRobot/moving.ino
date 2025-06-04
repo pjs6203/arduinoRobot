@@ -31,9 +31,6 @@ setFirstPose()
   로봇의 초기 위치를 변수에 저장함
 */
 
-
-
-
 //x, y, theta 업데이트
 void updateOdom()
 {
@@ -76,7 +73,7 @@ struct MotionTask
 inline long mm2tick(float mm)   { return lround(mm / MM_PER_TICK); }
 inline long deg2tick(float deg) { return mm2tick( (PI*WHEEL_BASE)*deg/360.0 ); }
 
-
+/*
 //직선이동
 void moveStraight(float mm, int spdDeg = 360)
 {
@@ -89,9 +86,50 @@ void moveStraight(float mm, int spdDeg = 360)
 
   prizm.setMotorSpeeds(task.spL, task.spR);   // 좌·우 동시에
 }
+*/
+
+//지정한 거리(mm)를 이동, 목표에 도달할 때까지 함수 내에서 대기
+void moveStraight(float mm, int spdDeg = 360) {
+  // 1) 엔코더 값 리셋 및 상태 초기화
+  prizm.resetEncoders();
+  prevL = prevR = 0;
+
+  // 2) 목표 틱 수 계산
+  long ticks = mm2tick(mm);
+  task.tgtL  = task.tgtR = ticks;
+  task.spL   = task.spR  = (mm >= 0) ?  spdDeg : -spdDeg;
+  task.mode  = STRAIGHT;
+
+  // 3) 모터 속도 설정 → 이동 시작
+  prizm.setMotorSpeeds(task.spL, task.spR);
+
+  // 4) 이동이 완료될 때까지 루프를 돌며 확인
+  while (true) {
+    // 오도메트리(엔코더) 업데이트
+    controller.run();
+
+    // 현재 엔코더 카운트 읽기
+    long curL = prizm.readEncoderCount(1);
+    long curR = prizm.readEncoderCount(2);
+
+    // 목표 틱에 도달했는지 확인
+    bool doneL = (task.tgtL >= 0) ? (curL >= task.tgtL) : (curL <= task.tgtL);
+    bool doneR = (task.tgtR >= 0) ? (curR >= task.tgtR) : (curR <= task.tgtR);
+
+    if (doneL && doneR) {
+      // 도달했으면 모터 정지, 상태 IDLE로 변경 후 반복 종료
+      prizm.setMotorSpeeds(0, 0);
+      task.mode = IDLE;
+      break;
+    }
+
+    // 너무 빠르게 반복되지 않도록 약간의 delay
+    delay(5);
+  }
+}
 
 
-
+/*
 //회전
 void turnInPlace(float deg, int spdDeg = 300)
 {
@@ -106,11 +144,54 @@ void turnInPlace(float deg, int spdDeg = 300)
 
   prizm.setMotorSpeeds(task.spL, task.spR);
 }
+*/
 
 
+//지정한 각도(deg)만큼 회전, 목표에 도달할 때까지 대기
+void turnInPlace(float deg, int spdDeg = 300) {
+  // 1) 엔코더 리셋 및 상태 초기화
+  prizm.resetEncoders();
+  prevL = prevR = 0;
+
+  // 2) 목표 틱 수 계산 (+CCW 방향)
+  long t       = deg2tick(deg);  // 엔코더 틱으로 변환
+  task.tgtL    = -t;             // 왼쪽 바퀴는 반대 방향
+  task.tgtR    =  t;
+  task.spL     = (deg >= 0) ? -spdDeg : spdDeg;  // CCW면 왼쪽 음수, CW면 양수
+  task.spR     = -task.spL;
+  task.mode    = TURN;
+
+  // 3) 모터 속도 설정 → 회전 시작
+  prizm.setMotorSpeeds(task.spL, task.spR);
+
+  // 4) 회전이 완료될 때까지 대기
+  while (true) {
+    controller.run();  // 오도메트리 및 스레드 업데이트
+
+    // 현재 엔코더 값 읽기
+    long curL = prizm.readEncoderCount(1);
+    long curR = prizm.readEncoderCount(2);
+
+    // 목표 틱에 도달했는지 확인
+    bool doneL = (task.tgtL >= 0) ? (curL >= task.tgtL) : (curL <= task.tgtL);
+    bool doneR = (task.tgtR >= 0) ? (curR >= task.tgtR) : (curR <= task.tgtR);
+
+    if (doneL && doneR) {
+      // 도달했으면 모터 정지, 상태 IDLE로 변경 후 반복 중단
+      prizm.setMotorSpeeds(0, 0);
+      task.mode = IDLE;
+      break;
+    }
+
+    // 너무 빠르게 루프가 도는 것을 방지
+    delay(5);
+  }
+}
+
+
+/*
 // 원호 주행
 void moveArc(float R_mm, float theta_deg, int spdDeg = 300)
-//R_mm>0 : 좌회전,  R_mm<0 : 우회전 
 {
   prizm.resetEncoders();  prevL = prevR = 0;
 
@@ -121,7 +202,7 @@ void moveArc(float R_mm, float theta_deg, int spdDeg = 300)
   if (R_mm > 0) { task.tgtL =  tickIn;  task.tgtR =  tickOut; }
   else          { task.tgtL = -tickOut; task.tgtR = -tickIn;  }
 
-  /* 속도 비례(간단) */
+  //속도 비례
   float ratio  = (float)abs(task.tgtR) / abs(task.tgtL);
   task.spL = (task.tgtL >= 0) ?  spdDeg : -spdDeg;
   task.spR = task.spL * ratio;
@@ -131,6 +212,68 @@ void moveArc(float R_mm, float theta_deg, int spdDeg = 300)
   task.mode = ARC;
   prizm.setMotorSpeeds(task.spL, task.spR);
 }
+*/
+
+
+//지정한 반지름 R_mm, 각도 theta_deg만큼 원호 주행 후 대기
+void moveArc(float R_mm, float theta_deg, int spdDeg = 300) {
+  // 1) 엔코더 리셋 및 상태 초기화
+  prizm.resetEncoders();
+  prevL = prevR = 0;
+
+  // 2) 원호 길이(arcIn_mm)와 대응 엔코더 틱 계산
+  float arcIn_mm = PI * fabs(R_mm) * fabs(theta_deg) / 180.0f;
+  long  tickIn   = mm2tick(arcIn_mm);
+  long  tickOut  = lround(tickIn * (fabs(R_mm) + WHEEL_BASE) / fabs(R_mm));
+
+  // 3) 좌, 우 바퀴 목표 틱과 속도 설정
+  if (R_mm > 0) {
+    // 좌회전: 왼쪽 바퀴가 안쪽 원, 오른쪽 바퀴가 바깥쪽 원
+    task.tgtL =  tickIn;
+    task.tgtR =  tickOut;
+  } else {
+    // 우회전: 각 반대
+    task.tgtL = -tickOut;
+    task.tgtR = -tickIn;
+  }
+
+  // 속도 비례로 계산
+  float ratio = (float)abs(task.tgtR) / abs(task.tgtL);
+  task.spL = (task.tgtL >= 0) ? spdDeg : -spdDeg;
+  task.spR = lround(task.spL * ratio);
+  if (task.spR >  720) task.spR =  720;
+  if (task.spR < -720) task.spR = -720;
+
+  task.mode = ARC;
+
+  // 4) 모터 속도 설정 → 원호 주행 시작
+  prizm.setMotorSpeeds(task.spL, task.spR);
+
+  // 5) 목표 틱에 도달할 때까지 대기
+  while (true) {
+    controller.run();  // 오도메트리 및 스레드 업데이트
+
+    long curL = prizm.readEncoderCount(1);
+    long curR = prizm.readEncoderCount(2);
+
+    // 좌/우 바퀴가 목표 틱에 도달했는지 확인
+    bool doneL = (task.tgtL >= 0) ? (curL >= task.tgtL) : (curL <= task.tgtL);
+    bool doneR = (task.tgtR >= 0) ? (curR >= task.tgtR) : (curR <= task.tgtR);
+
+    if (doneL && doneR) {
+      // 도달 시 모터 정지, 상태 IDLE로 변경 후 반복 종료
+      prizm.setMotorSpeeds(0, 0);
+      task.mode = IDLE;
+      break;
+    }
+
+    delay(5);  // 너무 빠르게 반복되지 않도록 약간 지연
+  }
+}
+
+
+
+
 
 void moveVelocity(float v_mm_s, float w_deg_s) {
   // w를 rad/s로 변환
@@ -154,8 +297,6 @@ void moveVelocity(float v_mm_s, float w_deg_s) {
   task.mode = STRAIGHT;  // 이동 모드(값 상관없이 속도 제어만 함)
   prizm.setMotorSpeeds(spL, spR);
 }
-
-
 
 
 // 조건부 전/후진 함수
@@ -197,7 +338,7 @@ void moveStraightUntil(int16_t speedDeg, ValueFn curValFn, CmdOp op, float refVa
 void setFirstPose() // 로봇의 초기 각도는 90도에 맞추어야 함
 {
   th_deg = 90;
-  x_mm = world_X - readDistanceSensorRight();
-  y_mm = world_Y - readDistanceSensorFront();
+  x_mm = world_X - (robotWidth / 2) - readDistanceSensorRight();
+  y_mm = world_Y - (robotHeight / 2) - readDistanceSensorFront();
 }
 
