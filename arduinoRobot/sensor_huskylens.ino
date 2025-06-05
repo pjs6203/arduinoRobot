@@ -16,3 +16,7 @@ int16_t readQRdata() //테스트 안 해봄
   return 0;
 }
 
+
+
+
+
