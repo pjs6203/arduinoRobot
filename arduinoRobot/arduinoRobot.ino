@@ -79,6 +79,7 @@ VL53L0X distanceSensorFront;
 /* ─────── 전역 상태 ─────── */
 volatile float x_mm = 0.0f;      // +x : 전방
 volatile float y_mm = 0.0f;      // +y : 우측   (좌표계는 필요에 따라 교체)
+volatile uint8_t lastQR = 0;   // 0 = 아직 없음 / 1~6 = 최근 인식된 ID
 static   long  prevF = 0, prevS = 0;   // 이전 인코더 값
 
 /* ─── 하드웨어 파라미터 ───────────────────── */
@@ -122,6 +123,10 @@ void updateOdom()
   const float mmPerTickS = (PI * WHEEL_D_SIDE) / (float)TICKS_REV;
   float dx = dnF * mmPerTickF;   // + 전진 / - 후진
   float dy = dnS * mmPerTickS;   // + 우측  / - 좌측
+
+  /* 이미 있는 출력 블록 바로 위, 또는 아래 아무 곳 */
+  uint8_t q = readQRdata();   // 한 번 읽기
+  if (q != 0) lastQR = q;     // 0이 아니면 덮어쓴다
 
   /* ④ 적분 (임계 구역 보호) */
   noInterrupts();
@@ -455,31 +460,38 @@ void loop()
                 gotoWorldY(700);
                 step1_scanPalette = 1; // 다음 스텝으로 넘어가기
             }
-            break;
+            break;                
 
-        case 1: //X좌표 맞추기
+        case 1: //QR 데이터 초기화
             if (!motion.active) {
-                gotoWorldX(3050); //X = 3050
+                lastQR = 0;
                 step1_scanPalette = 2;
             }
             break;
 
-        case 2: //Y좌표 맞추기
+        case 2: //X좌표 맞추기
             if (!motion.active) {
-                gotoWorldY(1050); //X = 3050
+                gotoWorldX(3050); //X = 3050
                 step1_scanPalette = 3;
             }
             break;
 
-        case 3: //QR 스캐닝, 위치 오차 보정
+        case 3: //Y좌표 맞추기 (6구역 진입)
             if (!motion.active) {
-                palletDest[6] = readQRdataTimeout(1000); //1초 동안 QR을 스캔함
-                setPoseY(); // 센서 이용하여 위치 오차 보정
+                gotoWorldY(1050); //X = 3050
                 step1_scanPalette = 4;
             }
             break;
 
-        case 4:
+        case 4: //QR 스캐닝, 위치 오차 보정
+            if (!motion.active) {
+                palletDest[6] = lastQR; //QR을 스캔함
+                setPoseY(); // 센서 이용하여 위치 오차 보정
+                step1_scanPalette = 5;
+            }
+            break;
+
+        case 5:
             step2 = 1; // 다시 짤 예정
             break;
 
