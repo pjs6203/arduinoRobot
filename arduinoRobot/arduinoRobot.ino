@@ -36,6 +36,7 @@ enum CmdOp { GE, LE, GT, LT, EQ };
 #include <Wire.h>
 #include <Thread.h> //ivanseidel
 #include <ThreadController.h> //ivanseidel
+#include "SoftwareSerial.h"
 
 
 //VL53L0X
@@ -54,6 +55,7 @@ HUSKYLENS huskylens;
 
 VL53L0X distanceSensorFront;
 VL53L0X distanceSensorRight;
+SoftwareSerial mySerial(2, 9); // RX, TX
 
 
 
@@ -139,8 +141,6 @@ void updateOdom()
   float dx = dnF * mmPerTickF;   // + 전진 / - 후진
   float dy = dnS * mmPerTickS;   // + 우측  / - 좌측
 
-
-
   /* ④ 적분 (임계 구역 보호) */
   noInterrupts();
   x_mm += dx;
@@ -152,9 +152,15 @@ void updateOdom()
   Serial.print(F(" y mm : "));
   Serial.println(y_mm);
 
+  Serial.print("QR : ");
+  Serial.println(readQRdata());
+
+  Serial.print("DistanceSensorFront [mm] : ");
+  Serial.println(readDistanceSensorFront());
+
   long raw = prizm.readEncoderCount(2);
   Serial.println(raw);
-  delay(50);
+  //delay(50);
 
 
 }
@@ -201,7 +207,6 @@ static void runProfile(int motIdx, long tgtTicks)
     if (done) break;
 
     controller.run();  
-
   }
 
   prizm.setMotorSpeeds(0,0);
@@ -310,7 +315,14 @@ void setup()
   Wire.begin();
 
   //Huskylens
-  huskylens.begin(Wire);
+  mySerial.begin(9600);
+  while (!huskylens.begin(mySerial))
+  {
+      Serial.println(F("Begin failed!"));
+        Serial.println(F("1.Please recheck the \"Protocol Type\" in HUSKYLENS (General Settings>>Protocol Type>>Serial 9600)"));
+        Serial.println(F("2.Please recheck the connection."));
+        delay(100);
+    }
 
   //VL53L0X
   distanceSensor_init(); 
@@ -322,11 +334,14 @@ void setup()
 }
 
 byte step = 0;             // ← loop() 밖, 전역에 선언
+
 void loop()
 {
     controller.run();
     motionUpdate();
 
+
+    /*
     switch (step)
     {
         case 0:
@@ -368,6 +383,8 @@ void loop()
                     case 5:
             break;
     }
+    */
+
 
     //prizm.PrizmEnd();
 }
