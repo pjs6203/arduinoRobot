@@ -57,7 +57,7 @@ VL53L0X distanceSensorFront;
 
 //상세 정보를 시리얼 모니터로 출력
 #define VERBOSE 1
-#define VERBOSE_DELAY 0
+#define VERBOSE_DELAY 10
 
 //가감속도 설정
 #define TARGET_SPD_DEG 360 //목표 속도, 0 ~ 720 [deg/s]
@@ -130,24 +130,24 @@ void updateOdom()
   interrupts();
 
   if(VERBOSE == 1){
-    Serial.print(F("x mm : "));
-    Serial.print(x_mm);
-    Serial.print(F(" y mm : "));
-    Serial.print(y_mm);
-
-    Serial.print("DistanceSensorFront [mm] : ");
-    Serial.println(readDistanceSensorFront());
-
-    Serial.print(F("Motor 1 Encoder : "));
+    Serial.print("BatteryVoltage : ");
+    Serial.print(prizm.readBatteryVoltage());
+    Serial.print(F(" Motor 1 Encoder : "));
     Serial.print(prizm.readEncoderCount(1));
-    Serial.print(F("Motor 2 Encoder : "));
+    Serial.print(F(" Motor 2 Encoder : "));
     Serial.println(prizm.readEncoderCount(2));
+
+    Serial.print(F("y mm : "));
+    Serial.print(y_mm);
+    Serial.print(F(" x mm : "));
+    Serial.print(x_mm);
+    Serial.print(" DistanceSensorFront [mm] : ");
+    Serial.print(readDistanceSensorFront());
+    Serial.print(" DistanceSensorRight [mm] : ");
+    Serial.println(readDistanceSensorRight());
 
     Serial.print(" QR : ");
     Serial.println(readQRdata());
-
-    long raw = prizm.readEncoderCount(2);
-    Serial.println(raw);
 
     delay(VERBOSE_DELAY);
   }
@@ -378,6 +378,8 @@ void setup()
   odomThread.onRun(updateOdom);
   odomThread.setInterval(20);   // 50 Hz
   controller.add(&odomThread);
+
+
 
   setPoseFirst(); //처음 위치를 설정합니다. 
 }
