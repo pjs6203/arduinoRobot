@@ -15,6 +15,12 @@ HUSKYLENS : 0x32
 시작/종료 구역 : 3150, 250
 */
 
+/*
+[할 것]
+1. 리프트 delay 없이 하기
+2. 어떠한 배열을 입력하면, 순서를 리턴하는 함수 ?..
+*/
+
 
 typedef float (*ValueFn)(); // 예: readFrontToF(), [](){ return x_mm; }
 enum CmdOp { GE, LE, GT, LT, EQ };
@@ -55,20 +61,17 @@ HUSKYLENS huskylens;
 SoftwareSerial mySerial(2, 9); //huskylens 
 VL53L0X distanceSensorFront;
 
+//dc motor expansion controller ID
+#define EXP_ID 2
+
 //상세 정보를 시리얼 모니터로 출력
 #define VERBOSE 1
-#define VERBOSE_DELAY 0
-#define EXP_ID 2
 
 //가감속도 설정
 #define TARGET_SPD_DEG 360 //목표 속도, 0 ~ 720 [deg/s]
 #define MIN_SPD_DEG 60 //이동 시 최소 속도를 설정합니다. [deg/s]
-#define ACCEL_DPS2 720 //가감속 파라미터. [deg/s^2]
+#define ACCEL_DPS2 720 //가감속도 [deg/s^2]
 #define LOOP_DT_MS 5 //적분 주기를 설정합니다. [ms]
-
-
-
-
 
 //바퀴 지름 설정
 #define WHEEL_D_FWD   105.0f // 앞뒤용 휠 지름 [mm]
@@ -152,10 +155,10 @@ void updateOdom()
     Serial.print(" DistanceSensorRight [mm] : ");
     Serial.println(readDistanceSensorRight());
 
+    Serial.print("lastQR : ");
+    Serial.print(lastQR);
     Serial.print(" QR : ");
     Serial.println(readQRdata());
-
-    delay(VERBOSE_DELAY);
   }
 
 }
