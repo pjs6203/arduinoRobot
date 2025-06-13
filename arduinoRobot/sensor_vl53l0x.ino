@@ -30,14 +30,10 @@ void distanceSensor_init()
 //read VL53L0X Distance Sensor
 int16_t readDistanceSensorFront()
 {
-  if (!distanceSensorFront.timeoutOccurred()) 
-  {
-    return distanceSensorFront.readRangeContinuousMillimeters();
-  }
-  else
-  {
-    return 0;
-  }
+    if (!distanceSensorFront.timeoutOccurred())
+        return distanceSensorFront.readRangeContinuousMillimeters();
+    else
+        return 8190;          // 오류·타임아웃 = 무한대 거리 취급
 }
 
 /* ── GP2Y0A21YK(10-80 cm) → 거리 [mm] 변환 ───────────────── */

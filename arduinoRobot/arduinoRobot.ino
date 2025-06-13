@@ -57,7 +57,8 @@ VL53L0X distanceSensorFront;
 
 //상세 정보를 시리얼 모니터로 출력
 #define VERBOSE 1
-#define VERBOSE_DELAY 10
+#define VERBOSE_DELAY 0
+#define EXP_ID 2
 
 //가감속도 설정
 #define TARGET_SPD_DEG 360 //목표 속도, 0 ~ 720 [deg/s]
@@ -109,8 +110,8 @@ inline float tick2deg(float tick){ return (tick * 360.0f) / (float)TICKS_REV; }
 void updateOdom()
 {
   /* ① 현재 인코더 읽기 */
-  long curF =  prizm.readEncoderCount(1);
-  long curS =  prizm.readEncoderCount(2);
+  long curF =  -prizm.readEncoderCount(2);
+  long curS =  -prizm.readEncoderCount(1);
 
   /* ② 증분 계산(tick) */
   long dnF  = curF - prevF;
@@ -200,7 +201,7 @@ void motionUpdate()
     motion.tPrev = tNow;
 
     /* ── 진행량 계산 ───────────────────── */
-    long encNow   = prizm.readEncoderCount(motion.motIdx);
+    long encNow   = - prizm.readEncoderCount(motion.motIdx);
     long progress = (encNow - motion.originTick) * motion.dir;
     if (progress < 0) progress = 0;
 
@@ -228,9 +229,16 @@ void motionUpdate()
     bool distanceDone = (progress >= labs(motion.tgtTicks));      // 원래 조건
 
     /* ★ 추가: 센서 조건 */
-    bool condDone = false;
-    if (motion.useCond && motion.condFn)
-        condDone = cmp(motion.condOp, motion.condFn(), motion.condRef);
+
+/* motionUpdate() 완료 판단 부분만 고쳐 줍니다 */
+bool condDone = false;
+if (motion.useCond && motion.condFn)
+{
+    float v = motion.condFn();          // 센서값
+    if (v > 0)                          // 0 → 아직 값 없음/오류 → 무시
+        condDone = cmp(motion.condOp, v, motion.condRef);
+}
+
 
     if (distanceDone || condDone) {
         prizm.setMotorSpeeds(0, 0);
@@ -245,7 +253,7 @@ void startForward(float mm)
     motion.motIdx   = 1;
     motion.tgtTicks = mm2tickFWD(mm);
     motion.dir      = (motion.tgtTicks >= 0) ? +1 : -1;
-    motion.originTick = prizm.readEncoderCount(1); // 시작 기준
+    motion.originTick = -prizm.readEncoderCount(1); // 시작 기준
     motion.spdDeg   = 0.0f;
     motion.tPrev    = millis();
 }
@@ -256,7 +264,7 @@ void startSide(float mm)
     motion.motIdx   = 2;
     motion.tgtTicks = mm2tickSIDE(mm);
     motion.dir      = (motion.tgtTicks >= 0) ? +1 : -1;
-    motion.originTick = prizm.readEncoderCount(2);
+    motion.originTick = -prizm.readEncoderCount(2);
     motion.spdDeg   = 0.0f;
     motion.tPrev    = millis();
 }
@@ -269,7 +277,7 @@ void startForwardUntil(float mm,
     motion.motIdx   = 1;
     motion.tgtTicks = mm2tickFWD(mm);
     motion.dir      = (motion.tgtTicks >= 0) ? +1 : -1;
-    motion.originTick = prizm.readEncoderCount(1);
+    motion.originTick = -prizm.readEncoderCount(1);
     motion.spdDeg   = 0;
     motion.tPrev    = millis();
 
@@ -286,7 +294,7 @@ void startSideUntil(float mm,
     motion.motIdx   = 2;
     motion.tgtTicks = mm2tickSIDE(mm);
     motion.dir      = (motion.tgtTicks >= 0) ? +1 : -1;
-    motion.originTick = prizm.readEncoderCount(2);
+    motion.originTick = -prizm.readEncoderCount(2);
     motion.spdDeg   = 0;
     motion.tPrev    = millis();
 
@@ -295,8 +303,6 @@ void startSideUntil(float mm,
     motion.condOp   = op;
     motion.condRef  = ref;
 }
-
-
 
 
 
@@ -372,6 +378,8 @@ void setup()
   //PRIZM Board
   prizm.PrizmBegin();
   prizm.resetEncoders();
+  prizm.setMotorInvert(1,1);
+  prizm.setMotorInvert(2,1);
 
   //I2C
   Wire.begin();
@@ -386,7 +394,7 @@ void setup()
 
 
 
-  setPoseFirst(); //처음 위치를 설정합니다. 
+  //setPoseFirst(); //처음 위치를 설정합니다. 
 }
 
 byte test = 0;
@@ -405,6 +413,14 @@ void loop()
 
     motionUpdate();
 
+
+    liftUp();
+    delay(1000);
+    liftDown();
+    delay(1000);
+
+    /*
+
     switch (test) //테스트용
     {
         case 0: //앞으로 1미터
@@ -416,7 +432,8 @@ void loop()
 
         case 1: //뒤로 1미터
             if (!motion.active) {
-                startForward(-1000);
+                gotoWorldY(700);
+                //startForwardUntil(1000, readDistanceSensorFront(), LE, 500);
                 test = 2;
             }
             break;
@@ -430,27 +447,24 @@ void loop()
 
         case 3: //왼쪽으로 1미터
             if (!motion.active) {
-                startSide(-1000);
+                startForward(-1000);
                 test = 4;
             }
             break;
 
         case 4: //일단 1미터 가는데, readDistanceSensorFront <= 500이면 멈추기
             if (!motion.active) {
-                startForwardUntil(1000, readDistanceSensorFront, LE, 500);
+                startSide(-1000);
                 test = 5;
             }
             break;
 
         case 5:
-            prizm.PrizmEnd();
+            //prizm.PrizmEnd();
             break;
-
-
     }
 
-
-
+*/
 
 /*
     switch (step1_scanPalette) //팔레트 스캔하기
