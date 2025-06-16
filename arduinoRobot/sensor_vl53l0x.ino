@@ -31,7 +31,7 @@ void distanceSensor_init()
 int16_t readDistanceSensorFront()
 {
     if (!distanceSensorFront.timeoutOccurred())
-        return distanceSensorFront.readRangeContinuousMillimeters();
+        return distanceSensorFront.readRangeContinuousMillimeters() - 50;
     else
         return 8190;          // 오류·타임아웃 = 무한대 거리 취급
 }

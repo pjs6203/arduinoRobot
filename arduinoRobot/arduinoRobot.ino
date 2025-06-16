@@ -5,6 +5,15 @@ frontToF (VL53L0X) : 0x29
 HUSKYLENS : 0x32
 */
 
+
+
+/*
+[할 것]
+1. 리프트 delay 없이 하기
+2. 어떠한 배열을 입력하면, 순서를 리턴하는 함수 ?..
+*/
+
+
 /*
 1구역 : 350, 1200
 2구역 : 1050, 1200
@@ -15,11 +24,9 @@ HUSKYLENS : 0x32
 시작/종료 구역 : 3150, 250
 */
 
-/*
-[할 것]
-1. 리프트 delay 없이 하기
-2. 어떠한 배열을 입력하면, 순서를 리턴하는 함수 ?..
-*/
+
+
+
 
 
 typedef float (*ValueFn)(); // 예: readFrontToF(), [](){ return x_mm; }
@@ -51,6 +58,7 @@ inline bool cmp(CmdOp op, float a, float b)
 #include <Thread.h> //ivanseidel
 #include <ThreadController.h> //ivanseidel
 #include <SoftwareSerial.h>
+#include <math.h>  // fabs
 
 //객체 생성
 PRIZM prizm; //tetrix prizm
@@ -70,12 +78,12 @@ VL53L0X distanceSensorFront;
 //가감속도 설정
 #define TARGET_SPD_DEG 360 //목표 속도, 0 ~ 720 [deg/s]
 #define MIN_SPD_DEG 60 //이동 시 최소 속도를 설정합니다. [deg/s]
-#define ACCEL_DPS2 720 //가감속도 [deg/s^2]
+#define ACCEL_DPS2 360 //가감속도 [deg/s^2]
 #define LOOP_DT_MS 5 //적분 주기를 설정합니다. [ms]
 
 //바퀴 지름 설정
-#define WHEEL_D_FWD   105.0f // 앞뒤용 휠 지름 [mm]
-#define WHEEL_D_SIDE  105.0f // 좌우용 휠 지름 [mm]
+#define WHEEL_D_FWD   95.0f // 앞뒤용 휠 지름 [mm]
+#define WHEEL_D_SIDE  95.0f // 좌우용 휠 지름 [mm]
 
 //모터 2번 반전여부, -1 or +1
 #define SIGN_M2 1
@@ -97,6 +105,7 @@ const int   world_Y = 1400;
 const int   robotHeight = 288; //세로길이, 바꿔야함
 const int   robotWidth = 288; //가로길이, 바꿔야함
 
+
 //틱 당 mm [tick/mm]
 #define MM_PER_TICK_FWD   ( (PI * WHEEL_D_FWD ) / TICKS_REV )
 #define MM_PER_TICK_SIDE  ( (PI * WHEEL_D_SIDE) / TICKS_REV )
@@ -106,6 +115,7 @@ inline long mm2tickSIDE(float mm) { return lround(mm / MM_PER_TICK_SIDE); } //mm
 /* mm·deg → 엔코더 tick 변환 */
 inline float deg2tick(float deg) { return (deg * TICKS_REV) / 360.0f; }
 inline float tick2deg(float tick){ return (tick * 360.0f) / (float)TICKS_REV; }
+
 
 
 
@@ -309,34 +319,17 @@ void startSideUntil(float mm,
 
 
 
-//특정 Y 좌표까지 이동하기
-void gotoWorldY(float targetY_mm)
-{
-    float tgt = clampY(targetY_mm);
-    float dy  = tgt - y_mm;           // +앞 / –뒤
-    if (fabsf(dy) >= 1.0f)            // 1 mm 이하는 무시
-        startForward(dy);
-}
-
-//특정 X 좌표까지 이동하기
-void gotoWorldX(float targetX_mm)
-{
-    float tgt = clampX(targetX_mm);
-    float dx  = tgt - x_mm;           // +우 / –좌
-    if (fabsf(dx) >= 1.0f)
-        startSide(dx);
-}
 
 
 
 
 void setPoseFirst()
 {
-    y_mm = world_Y - (robotHeight / 2) - readDistanceSensorFront();
+    y_mm = world_Y - (355 * 0.5) - readDistanceSensorFront();
     Serial.print(F("y_mm : "));
     Serial.println(y_mm);
 
-    x_mm = world_X - (robotWidth / 2) - readDistanceSensorRight();
+    x_mm = world_X - (355 * 0.5) - readDistanceSensorRight();
     Serial.print(F("x_mm : "));
     Serial.println(x_mm);
 
@@ -345,7 +338,7 @@ void setPoseFirst()
 
 void setPoseY()
 {
-    y_mm = world_Y - (robotHeight / 2) - readDistanceSensorFront();
+    y_mm = world_Y - (355 * 0.5) - readDistanceSensorFront();
     Serial.print(F("y_mm : "));
     Serial.println(y_mm);
 
@@ -354,7 +347,7 @@ void setPoseY()
 
 void setPoseX()
 {
-    x_mm = world_X - (robotWidth / 2) - readDistanceSensorRight();
+    x_mm = world_X - (355 * 0.5) - readDistanceSensorRight();
     Serial.print(F("x_mm : "));
     Serial.println(x_mm);
 
@@ -362,6 +355,111 @@ void setPoseX()
 }
 
 
+
+
+/* --------------------------------------------------------------------
+   1. gotoWorldY  ―  목표 Y(mm)까지 직진
+      · targetY_mm : 절대 좌표 (월드 기준)
+      · tol_mm     : 오차 허용(기본 1mm). 1mm 이내면 이동 생략.
+   -------------------------------------------------------------------- */
+void gotoWorldY(float targetY_mm, float tol_mm = 1.0f)
+{
+    float tgt = clampY(targetY_mm);        // 벽 넘어가지 않도록
+    float dy  = tgt - y_mm;                // +앞 / –뒤
+    if (fabsf(dy) < tol_mm) return;        // 거의 제자리면 끝
+
+    startForward(dy);                      // ① 주행 시작
+
+    while (motion.active) {                // ② 완료까지 대기
+        controller.run();                  // 오도메트리 쓰레드
+        motionUpdate();                    // 가감속·엔코더
+    }
+}
+
+/* --------------------------------------------------------------------
+   2. gotoWorldX  ―  목표 X(mm)까지 좌·우 이동
+      · targetX_mm : 절대 좌표
+      · tol_mm     : 오차 허용(1mm 기본)
+   -------------------------------------------------------------------- */
+void gotoWorldX(float targetX_mm, float tol_mm = 1.0f)
+{
+    float tgt = clampX(targetX_mm);
+    float dx  = tgt - x_mm;                // +우 / –좌
+    if (fabsf(dx) < tol_mm) return;
+
+    startSide(dx);                         // ① 주행 시작
+
+    while (motion.active) {                // ② 완료까지 대기
+        controller.run();
+        motionUpdate();
+
+    }
+}
+
+
+
+
+const int REGION_X[7] = { 0,350,1050,350,1050,2600,3050 };
+
+int findNearestMovableRegion(const int dest[7], double robotX) {
+    int nearestIdx = 0;
+    double minDist = 1e9;
+
+    for (int i = 1; i <= 6; ++i) {
+        if (dest[i] == 0) continue;
+        int target = dest[i];
+        if (dest[target] != 0) continue;  // 목적지에 이미 팔레트가 있으면 스킵
+
+        double d = fabs(REGION_X[i] - robotX);  // <-- fabs 사용
+        if (d < minDist) {
+            minDist = d;
+            nearestIdx = i;
+        }
+    }
+    return nearestIdx;
+}
+
+
+
+
+
+//const int REGION_X[7] = { 0,350,1050,350,1050,2600,3050 };
+
+bool scanOneZone(uint8_t zoneIdx)
+{
+    lastQR = 0;                        // 1) QR 초기화
+    gotoWorldY(700);                   // 2) Y 중앙선
+    gotoWorldX(REGION_X[zoneIdx]);     // 3) X 정렬
+    if(zoneIdx == 3 || zoneIdx == 4 ){
+        driveUntilFrontGE(-1000, 1300); 
+    }else{
+        driveUntilFrontLE(1000, 100); 
+    }
+
+    if (lastQR != 0) {                 // 5) QR이 실제로 읽혔을 때만
+        palletDest[zoneIdx] = lastQR;  //    배열에 기록
+        setPoseY();                    //    Y 보정
+        return true;                   //    성공
+    }
+    return false;                      // QR 없음(0) → 실패
+}
+
+void goOneZone(uint8_t zoneIdx)
+{
+    lastQR = 0;                        // 1) QR 초기화
+    gotoWorldY(700);                   // 2) Y 중앙선
+    gotoWorldX(REGION_X[zoneIdx]);     // 3) X 정렬
+    if(zoneIdx == 3 || zoneIdx == 4){
+        driveUntilFrontGE(-1000, 1300);
+    }else{
+        driveUntilFrontLE(1000, 100);
+    }
+}
+
+
+int palletDest[7] = {0,0,0,0,0,0,0}; //구역 별 팔레트 목적지, 0번 인덱스는 아마 사용 안 할듯
+
+int tmp =0; //임시 저장용
 
 void setup() 
 {
@@ -394,19 +492,23 @@ void setup()
   odomThread.onRun(updateOdom);
   odomThread.setInterval(20);   // 50 Hz
   controller.add(&odomThread);
-
-
-
   //setPoseFirst(); //처음 위치를 설정합니다. 
 }
 
-byte test = 0;
-byte step1_scanPalette = 0; //팔레트 스캔
-byte step2 = 0;
-byte step3 = 0;
-byte step4 = 0;
-byte step5 = 0; 
-int palletDest[7] = {0,0,0,0,0,0,0}; //구역 별 팔레트 목적지, 0번 인덱스는 아마 사용 안 할듯
+
+
+/*
+1구역 : 350, 1200
+2구역 : 1050, 1200
+3구역 : 350, 200
+4구역 : 1050, 200
+5구역 : 2600, 1200
+6구역 : 3050, 1200
+시작/종료 구역 : 3150, 250
+*/
+
+
+
 
 
 
@@ -417,13 +519,69 @@ void loop()
     motionUpdate();
 
 
+    //forward(1000);
+    //side(1000);
+    //driveUntilFront(1000, 500);
+
+    for(int i = 1; i < 7; i++){ //1 ~ 6구간 모두 스캔 후 palletdest 변수에 저장함.
+        tmp = tmp + scanOneZone(i);
+        if (tmp == 4) break;
+    }
+
+
+    //gotoWorldY(700); //Y축 센터로 이동
+
+
+
+
+/*
     liftUp();
     delay(1000);
     liftDown();
     delay(1000);
+*/
 
+/*
+
+
+    switch (test) //테스트용
+    {
+        case 0: //앞으로 1미터
+            if (!motion.active) {
+                startForward(1000);
+                test = 1; 
+            }
+            break;
+
+        case 1:
+            float dist = readDistanceSensorFront();  // mm 단위
+            if (dist > 0 && dist <= 500) {
+                prizm.setMotorSpeeds(0, 0);
+                motion.active = false;
+                test = 2;
+            } else if (!motion.active) {
+                test = 2;
+                }
+
+            break;
+            
+
+        case 2:
+            if (!motion.active) {
+                prizm.PrizmEnd();
+            }
+
+            break;
+
+        case 3:
+            if (!motion.active) {
+                prizm.PrizmEnd();
+            }
+
+            break;
+    }
+*/
     /*
-
     switch (test) //테스트용
     {
         case 0: //앞으로 1미터
@@ -463,11 +621,14 @@ void loop()
             break;
 
         case 5:
-            //prizm.PrizmEnd();
+            if (!motion.active) {
+                prizm.PrizmEnd();
+            }
+
             break;
     }
-
 */
+
 
 /*
     switch (step1_scanPalette) //팔레트 스캔하기
@@ -520,5 +681,5 @@ void loop()
 
 
 
-    //prizm.PrizmEnd();
+    prizm.PrizmEnd();
 }
