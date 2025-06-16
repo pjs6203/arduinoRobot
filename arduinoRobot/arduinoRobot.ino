@@ -76,14 +76,14 @@ VL53L0X distanceSensorFront;
 #define VERBOSE 1
 
 //가감속도 설정
-#define TARGET_SPD_DEG 360 //목표 속도, 0 ~ 720 [deg/s]
+#define TARGET_SPD_DEG 500 //목표 속도, 0 ~ 720 [deg/s]
 #define MIN_SPD_DEG 60 //이동 시 최소 속도를 설정합니다. [deg/s]
-#define ACCEL_DPS2 360 //가감속도 [deg/s^2]
+#define ACCEL_DPS2 100 //가감속도 [deg/s^2]
 #define LOOP_DT_MS 5 //적분 주기를 설정합니다. [ms]
 
 //바퀴 지름 설정
-#define WHEEL_D_FWD   95.0f // 앞뒤용 휠 지름 [mm]
-#define WHEEL_D_SIDE  95.0f // 좌우용 휠 지름 [mm]
+#define WHEEL_D_FWD   100.0f // 앞뒤용 휠 지름 [mm]
+#define WHEEL_D_SIDE  100.0f // 좌우용 휠 지름 [mm]
 
 //모터 2번 반전여부, -1 or +1
 #define SIGN_M2 1
@@ -401,6 +401,8 @@ void gotoWorldX(float targetX_mm, float tol_mm = 1.0f)
 
 const int REGION_X[7] = { 0,350,1050,350,1050,2600,3050 };
 
+
+/* 1) 지금 바로 옮길 수 있는 팔레트가 있는 가장 가까운 구역 */
 int findNearestMovableRegion(const int dest[7], double robotX) {
     int nearestIdx = 0;
     double minDist = 1e9;
@@ -419,7 +421,39 @@ int findNearestMovableRegion(const int dest[7], double robotX) {
     return nearestIdx;
 }
 
+/* 2) 팔레트가 “어디든” 있는 곳 중 가장 가까운 구역 (목적지 막힘 무시) */
+int findNearestLoadedRegion(const int dest[7], double robotX)
+{
+    int idx = 0; double minD = 1e9;
 
+    for (int i = 1; i <= 6; ++i) {
+        if (dest[i] == 0) continue;             // 비어 있음
+
+        double d = fabs(REGION_X[i] - robotX);
+        if (d < minD) { minD = d; idx = i; }
+    }
+    return idx;     // 없으면 0 (모든 구역이 비어 있으면)
+}
+
+
+/* 3) 비어 있는 구역(팔레트 없음) 중 가장 가까운 곳 */
+int findNearestEmptyRegion(const int dest[7], double robotX)
+{
+    int idx = 0; double minD = 1e9;
+
+    for (int i = 1; i <= 6; ++i) {
+        if (dest[i] != 0) continue;             // 팔레트 있으면 skip
+
+        double d = fabs(REGION_X[i] - robotX);
+        if (d < minD) { minD = d; idx = i; }
+    }
+    return idx;     // 없으면 0 (빈 칸이 하나도 없으면)
+}
+
+
+
+
+int palletDest[7] = {0,0,0,0,0,0,0}; //구역 별 팔레트 목적지, 0번 인덱스는 아마 사용 안 할듯
 
 
 
@@ -457,7 +491,6 @@ void goOneZone(uint8_t zoneIdx)
 }
 
 
-int palletDest[7] = {0,0,0,0,0,0,0}; //구역 별 팔레트 목적지, 0번 인덱스는 아마 사용 안 할듯
 
 int tmp =0; //임시 저장용
 
@@ -519,16 +552,23 @@ void loop()
     motionUpdate();
 
 
-    //forward(1000);
+    forward(1000);
     //side(1000);
     //driveUntilFront(1000, 500);
 
+    /*
     for(int i = 1; i < 7; i++){ //1 ~ 6구간 모두 스캔 후 palletdest 변수에 저장함.
         tmp = tmp + scanOneZone(i);
         if (tmp == 4) break;
     }
 
 
+
+    if(!findNearestMovableRegion(palletDest, x_mm)){
+        
+    }
+
+*/
     //gotoWorldY(700); //Y축 센터로 이동
 
 
