@@ -575,7 +575,7 @@ void setup()
   odomThread.onRun(updateOdom);
   odomThread.setInterval(20);   // 50 Hz
   controller.add(&odomThread);
-  //setPoseFirst(); //처음 위치를 설정합니다. 
+  setPoseFirst(); //처음 위치를 설정합니다. 
 }
 
 
@@ -607,6 +607,8 @@ void loop()
     //side(1000);
     //driveUntilFront(1000, 500);
 
+
+/*
     //1 ~ 6구간 모두 스캔 후 palletdest 변수에 저장합니다.
     //만약 QR스캔이 제대로 안 돼서 변수에 2-3개만 저장된다면 다시 스캔해야하는데, 어떻게 구현해야할까
     for(int i = 1; i < 7; i++){ 
@@ -654,5 +656,8 @@ void loop()
     Serial("집으로 돌아갑니다.")
     goHome();
 
-    prizm.PrizmEnd();
+    */
+
+
+    //prizm.PrizmEnd();
 }

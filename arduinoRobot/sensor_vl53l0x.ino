@@ -31,7 +31,7 @@ void distanceSensor_init()
 int16_t readDistanceSensorFront()
 {
     if (!distanceSensorFront.timeoutOccurred())
-        return distanceSensorFront.readRangeContinuousMillimeters() - 50;
+        return distanceSensorFront.readRangeContinuousMillimeters() - 240; //보정값 추가
     else
         return 8190;          // 오류·타임아웃 = 무한대 거리 취급
 }
@@ -42,9 +42,6 @@ int16_t readDistanceSensorRight()
     /* 1) ADC 읽기 */
     int raw = analogRead(SHARP_RIGHT_PIN);   // 0-1023
 
-    /* 2) 신뢰 구간(대략 0.4 V ~ 3.0 V) 밖이면 오류 → 0 mm */
-    if (raw < 80 || raw > 700) return 0;
-
     /* 3) 원시값 → 전압[V] */
     float v = raw * (5.0f / 1023.0f);
 
@@ -52,9 +49,6 @@ int16_t readDistanceSensorRight()
           d[cm] = 27.728 × V^-1.2045  */
     float dist_cm = 27.728f * powf(v, -1.2045f);
 
-    /* 5) 센서 범위(약 10-80 cm) 밖이면 0 mm */
-    if (dist_cm < 10.0f || dist_cm > 80.0f) return 0;
-
     /* 6) mm 단위로 반환 */
-    return (int16_t)(dist_cm * 10.0f + 0.5f);   // 반올림
+    return (int16_t)(dist_cm * 10.0f + 0.5f) - 150;   // 반올림, 보정값 추가
 }
