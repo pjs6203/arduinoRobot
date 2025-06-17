@@ -76,9 +76,9 @@ VL53L0X distanceSensorFront;
 #define VERBOSE 1
 
 //가감속도 설정
-#define TARGET_SPD_DEG 500 //목표 속도, 0 ~ 720 [deg/s]
-#define MIN_SPD_DEG 60 //이동 시 최소 속도를 설정합니다. [deg/s]
-#define ACCEL_DPS2 100 //가감속도 [deg/s^2]
+#define TARGET_SPD_DEG 720 //목표 속도, 0 ~ 720 [deg/s] 500
+#define MIN_SPD_DEG 60 //이동 시 최소 속도를 설정합니다. [deg/s] 60
+#define ACCEL_DPS2 360 //가감속도 [deg/s^2] 100
 #define LOOP_DT_MS 5 //적분 주기를 설정합니다. [ms]
 
 //바퀴 지름 설정
@@ -87,6 +87,8 @@ VL53L0X distanceSensorFront;
 
 //모터 2번 반전여부, -1 or +1
 #define SIGN_M2 1
+
+#define LINE_PIN 4
 
 /* ─────── 전역 상태 ─────── */
 volatile float x_mm = 0.0f;      // +x : 전방
@@ -123,7 +125,7 @@ void updateOdom()
 {
   /* ① 현재 인코더 읽기 */
   long curF =  -prizm.readEncoderCount(2);
-  long curS =  -prizm.readEncoderCount(1);
+  long curS =  prizm.readEncoderCount(1);
 
   /* ② 증분 계산(tick) */
   long dnF  = curF - prevF;
@@ -168,8 +170,21 @@ void updateOdom()
     Serial.print(lastQR);
     Serial.print(" QR : ");
     Serial.println(readQRdata());
+
+    Serial.print("palletDest[] ");
+
+    for(int i = 0; i < 7; i++)
+    {
+        Serial.print(i);
+        Serial.print(" : ");
+        Serial.print(palletDest[i]);
+        Serial.print(", ");
+    }
+    Serial.println();
   }
 
+    Serial.print(" line : ");
+    Serial.println(digitalRead(4));
 }
 
 struct MotionState {
@@ -213,7 +228,10 @@ void motionUpdate()
     motion.tPrev = tNow;
 
     /* ── 진행량 계산 ───────────────────── */
-    long encNow   = - prizm.readEncoderCount(motion.motIdx);
+    long encNow = - prizm.readEncoderCount(motion.motIdx);
+    if (motion.motIdx == 1 ){
+        encNow  = prizm.readEncoderCount(motion.motIdx);
+    }
     long progress = (encNow - motion.originTick) * motion.dir;
     if (progress < 0) progress = 0;
 
@@ -265,7 +283,7 @@ void startForward(float mm)
     motion.motIdx   = 1;
     motion.tgtTicks = mm2tickFWD(mm);
     motion.dir      = (motion.tgtTicks >= 0) ? +1 : -1;
-    motion.originTick = -prizm.readEncoderCount(1); // 시작 기준
+    motion.originTick = prizm.readEncoderCount(1); // 시작 기준
     motion.spdDeg   = 0.0f;
     motion.tPrev    = millis();
 }
@@ -289,7 +307,7 @@ void startForwardUntil(float mm,
     motion.motIdx   = 1;
     motion.tgtTicks = mm2tickFWD(mm);
     motion.dir      = (motion.tgtTicks >= 0) ? +1 : -1;
-    motion.originTick = -prizm.readEncoderCount(1);
+    motion.originTick = prizm.readEncoderCount(1);
     motion.spdDeg   = 0;
     motion.tPrev    = millis();
 
@@ -328,29 +346,35 @@ void setPoseFirst()
     Serial.print(F("y_mm : "));
     Serial.println(y_mm);
 
-    x_mm = world_X - (355 * 0.5) - readDistanceSensorRight();
+    x_mm = world_X - 230 - readDistanceSensorRight();
     Serial.print(F("x_mm : "));
     Serial.println(x_mm);
 
     Serial.println(F("location set complete."));
 }
 
-void setPoseY()
+void setPoseY(int mm = -1)
 {
+    if(mm > 0){
+        y_mm = mm;
+    }else{
     y_mm = world_Y - (355 * 0.5) - readDistanceSensorFront();
     Serial.print(F("y_mm : "));
     Serial.println(y_mm);
-
     Serial.println(F("Y set complete"));
+    }
 }
 
-void setPoseX()
+void setPoseX(int mm = -1)
 {
+    if(mm > 0){
+        y_mm = mm;
+    }else{
     x_mm = world_X - (355 * 0.5) - readDistanceSensorRight();
     Serial.print(F("x_mm : "));
     Serial.println(x_mm);
-
     Serial.println(F("X set complete"));
+    }
 }
 
 
@@ -364,7 +388,7 @@ void setPoseX()
 void gotoWorldY(float targetY_mm, float tol_mm = 1.0f)
 {
     float tgt = clampY(targetY_mm);        // 벽 넘어가지 않도록
-    float dy  = tgt - y_mm;                // +앞 / –뒤
+    float dy  = tgt - (world_Y - (355 * 0.5) - readDistanceSensorFront());                // +앞 / –뒤
     if (fabsf(dy) < tol_mm) return;        // 거의 제자리면 끝
 
     startForward(dy);                      // ① 주행 시작
@@ -398,7 +422,7 @@ void gotoWorldX(float targetX_mm, float tol_mm = 1.0f)
 
 
 
-const int REGION_X[7] = { 0,350,1050,350,1050,2600,3050 };
+const int REGION_X[7] = { 0,350,1050,350,1050,2350,3050 };
 
 
 /* 1) 지금 바로 옮길 수 있는 팔레트가 있는 가장 가까운 구역 */
@@ -461,12 +485,13 @@ int findNearestEmptyRegion(const int dest[7], double robotX)
 bool scanOneZone(uint8_t zoneIdx)
 {
     lastQR = 0;                        // 1) QR 초기화
-    gotoWorldY(700);                   // 2) Y 중앙선
+    gotoWorldY(600);                   // 2) Y 중앙선
     gotoWorldX(REGION_X[zoneIdx]);     // 3) X 정렬
+
     if(zoneIdx == 3 || zoneIdx == 4 ){
-        driveUntilFrontGE(-1000, 1300); 
+        driveUntilFrontGE(-10000, 1250); 
     }else{
-        driveUntilFrontLE(1000, 100); 
+        driveUntilFrontLE(10000, 150); 
     }
 
     if (lastQR != 0) {                 // 5) QR이 실제로 읽혔을 때만
@@ -492,7 +517,7 @@ void goOneZone(uint8_t zoneIdx)
 }
 
 //집으로 돌아간다.
-void goHome(uint8_t zoneIdx)
+void goHome()
 {
     gotoWorldY(700);                   // 2) Y 중앙선
     gotoWorldX(3150);     // 3) X 정렬
@@ -529,6 +554,52 @@ void pickupAndDrop(uint8_t zoneIdx, uint8_t zoneIdxTarget)
 }
 
 
+// Huskylens Pro
+// 팔레트 인식도 가능할까 ? ..
+
+void printResult(HUSKYLENSResult result);
+
+int16_t readQRdata() //인식 불가 시 0 리턴
+{
+  int data = 0;
+  if(!huskylens.request()) return 0;
+  if(!huskylens.isLearned()) return 0; 
+  if(!huskylens.available()) return 0;
+
+  HUSKYLENSResult result = huskylens.read();
+
+  if (result.ID >= 1 && result.ID <= 6) return result.ID;
+  return 0;
+}
+
+
+/*-----------------------------------------------------------
+   QR / 팔레트 ID를 찾을 때까지 최장 timeout_ms 만큼 반복 스캔
+   성공 → 감지된 ID(1~6)  │   실패(타임아웃·오류) → 0
+  -----------------------------------------------------------*/
+int16_t readQRdataTimeout(uint32_t timeout_ms)
+{
+    const uint32_t tStart = millis();          // 시작 시각
+
+    while (millis() - tStart < timeout_ms)     // 타임아웃 전까지 반복
+    {
+        /* ① 요청 → 응답 대기                         */
+        if (!huskylens.request())      continue;   // I²C 송신 실패
+        if (!huskylens.isLearned())    continue;   // 학습 데이터 없음
+        if (!huskylens.available())    continue;   // 프레임에 아무것도 안 보임
+
+        /* ② 결과 읽기                               */
+        HUSKYLENSResult r = huskylens.read();
+        if (r.ID >= 1 && r.ID <= 6)
+            return r.ID;                           // ★ 성공: 즉시 반환
+    }
+
+    return 0;  // ★ 타임아웃: 아무 것도 못 찾음
+}
+
+
+
+
 
 
 /*  true  →  더 이상 옮길 팔레트 없음
@@ -540,6 +611,273 @@ bool isAllPalletsDone(const int dest[7])
             return false;          // 제자리도 아니고 비어 있지도 않음
     }
     return true;                   // 모두 자리 완료
+}
+
+
+#define SHARP_RIGHT_PIN   A1 //A1
+
+void distanceSensor_init()
+{
+
+  Serial.println(F("VL53L0X Distance Sensor Starting..."));
+
+  Serial.print(F("Front Sensor Address : "));
+  Serial.println(distanceSensorFront.getAddress());
+
+  if (!distanceSensorFront.init())//try to initilise the sensor
+  {
+      Serial.println("distanceSensorFront is not responding."); //Sensor does not respond within the timeout time
+      Serial.print(F("Front Sensor Address : "));
+      Serial.println(distanceSensorFront.getAddress());
+  }
+  else
+  {
+    distanceSensorFront.setMeasurementTimingBudget(100000);
+    distanceSensorFront.setSignalRateLimit(0.1);
+    distanceSensorFront.setVcselPulsePeriod(VL53L0X::VcselPeriodPreRange, 18);
+    distanceSensorFront.setVcselPulsePeriod(VL53L0X::VcselPeriodFinalRange, 14);
+    distanceSensorFront.startContinuous(100);
+
+    Serial.print(F("Front Sensor Address : "));
+    Serial.println(distanceSensorFront.getAddress());
+  }  
+}
+
+//read VL53L0X Distance Sensor
+int16_t readDistanceSensorFront()
+{
+    if (!distanceSensorFront.timeoutOccurred())
+        return distanceSensorFront.readRangeContinuousMillimeters() - 246; //보정값 추가
+    else
+        return 8190;          // 오류·타임아웃 = 무한대 거리 취급
+}
+
+/* ── GP2Y0A21YK(10-80 cm) → 거리 [mm] 변환 ───────────────── */
+int16_t readDistanceSensorRight()
+{
+    /* 1) ADC 읽기 */
+    int raw = analogRead(SHARP_RIGHT_PIN);   // 0-1023
+
+    /* 3) 원시값 → 전압[V] */
+    float v = raw * (5.0f / 1023.0f);
+
+    /* 4) 전압 ↔ 거리 회귀식  (GP2Y0A21 데이터시트)  
+          d[cm] = 27.728 × V^-1.2045  */
+    float dist_cm = 27.728f * powf(v, -1.2045f);
+
+    /* 6) mm 단위로 반환 */
+    return (int16_t)(dist_cm * 10.0f + 0.5f) - 195;   // 반올림, 보정값 추가
+}
+
+
+
+/**
+ * 앞으로 일정 거리(startDist)까지 주행 ↔
+ * 주행 도중 앞 ToF가 thresh(mm) 이하로 떨어지면 즉시 정지 ↔
+ * 정지 후 리프트를 올리고 끝.
+ *
+ * 모든 과정을 내부 while 루프에서 처리하므로
+ * 호출자는 이 함수 한 줄만 쓰면 됩니다.
+ */
+void driveUntilFrontLE(float startDist_mm,
+                     float thresh_mm)
+{
+  /* 1) 주행 시작 -------------------------------------- */
+  startForward(startDist_mm);          // 거리만 주고 전진
+
+  /* 2) 주행·센서 감시 --------------------------------- */
+  while (motion.active) {              // 모션이 끝날 때까지
+    controller.run();                  // odom thread
+    motionUpdate();      
+
+    float d = readDistanceSensorFront();
+    if (d > 0 && d <= thresh_mm) {     // 센서 조건 만족
+      prizm.setMotorSpeeds(0, 0);      // 즉시 정지
+      motion.active = false;           // 루프 탈출
+    }
+  }
+
+}
+
+
+void driveUntilRightLE(float startDist_mm,
+                     float thresh_mm)
+{
+  /* 1) 주행 시작 ────────────────── */
+  startSide(startDist_mm);            // 좌우 이동
+
+  /* 2) 주행·센서 감시 ───────────── */
+  while (motion.active) {
+    controller.run();                 // odom thread
+    motionUpdate();                   // 가감속·엔코더
+
+    float d = readDistanceSensorRight();
+    if (d > 0 && d <= thresh_mm) {    // 센서 조건 만족
+      prizm.setMotorSpeeds(0, 0);     // 즉시 정지
+      motion.active = false;          // 루프 탈출
+    }
+  }
+}
+
+
+void driveUntilFrontGE(float startDist_mm,
+                     float thresh_mm)
+{
+  /* 1) 주행 시작 -------------------------------------- */
+  startForward(startDist_mm);          // 거리만 주고 전진
+
+  /* 2) 주행·센서 감시 --------------------------------- */
+  while (motion.active) {              // 모션이 끝날 때까지
+    controller.run();                  // odom thread
+    motionUpdate();      
+
+    float d = readDistanceSensorFront();
+    if (d > 0 && d >= thresh_mm) {     // 센서 조건 만족
+      prizm.setMotorSpeeds(0, 0);      // 즉시 정지
+      motion.active = false;           // 루프 탈출
+    }
+  }
+
+}
+
+
+void driveUntilRightGE(float startDist_mm,
+                     float thresh_mm)
+{
+  /* 1) 주행 시작 ────────────────── */
+  startSide(startDist_mm);            // 좌우 이동
+
+  /* 2) 주행·센서 감시 ───────────── */
+  while (motion.active) {
+    controller.run();                 // odom thread
+    motionUpdate();                   // 가감속·엔코더
+
+    float d = readDistanceSensorRight();
+    if (d > 0 && d >= thresh_mm) {    // 센서 조건 만족
+      prizm.setMotorSpeeds(0, 0);     // 즉시 정지
+      motion.active = false;          // 루프 탈출
+    }
+  }
+}
+
+
+/* ① 전방(앞/뒤) 이동 + 라인센서 정지 조건 ---------------------- */
+void driveUntilFrontLine(float startDist_mm)
+{
+    /* a) 주행 시작 -------------------------------------------- */
+    startForward(startDist_mm);
+
+    /* b) “절반 거리”를 tick 단위로 계산 ------------------------- */
+    long halfTicks = labs(mm2tickFWD(startDist_mm)) / 2;
+    long encStart  = prizm.readEncoderCount(1);   // 시작 시 tick
+
+    /* c) 루프 -------------------------------------------------- */
+    while (motion.active) {
+        controller.run();
+        motionUpdate();
+
+        /* 주행 경과 tick 계산 */
+        long encNow   = -prizm.readEncoderCount(1);
+        long traveled = labs(encNow - encStart);
+
+        bool halfPassed = (traveled >= halfTicks);
+        bool lineOK     = (digitalRead(LINE_PIN) == HIGH);
+
+        if (halfPassed && lineOK) {             // 둘 다 만족할 때만 정지
+            prizm.setMotorSpeeds(0, 0);
+            motion.active = false;
+        }
+    }
+}
+
+/* ② 좌·우 이동 + 라인센서 정지 조건 (startDist_mm: +우 / –좌) -- */
+void driveUntilRightLine(float startDist_mm)
+{
+    startSide(startDist_mm);
+
+    long halfTicks = labs(mm2tickSIDE(startDist_mm)) / 2;
+    long encStart  = -prizm.readEncoderCount(2);   // 모터 2번
+
+    while (motion.active) {
+        controller.run();
+        motionUpdate();
+
+        long encNow   = -prizm.readEncoderCount(2);
+        long traveled = labs(encNow - encStart);
+
+        bool halfPassed = (traveled >= halfTicks);
+        bool lineOK     = (digitalRead(LINE_PIN) == HIGH);
+
+        if (halfPassed && lineOK) {
+            prizm.setMotorSpeeds(0, 0);
+            motion.active = false;
+        }
+    }
+}
+
+
+/* ② 좌·우 이동 + 라인센서 정지 조건 (startDist_mm: +우 / –좌) -- */
+void driveUntilRightLineForce(float startDist_mm)
+{
+    startSide(startDist_mm);
+
+    while (motion.active) {
+        controller.run();
+        motionUpdate();
+
+        bool lineOK = (digitalRead(LINE_PIN) == HIGH);
+
+        if (lineOK) {
+            prizm.setMotorSpeeds(0, 0);
+            motion.active = false;
+        }
+    }
+}
+
+
+
+
+
+
+
+void forward(int mm)             // 매개변수도 없음!
+{
+    startForward(mm);           // ① 주행 시작
+
+    while (motion.active) {          // ② 끝날 때까지 대기
+        controller.run();            // 쓰레드(오도메트리)
+        motionUpdate();              // 가감속·엔코더 체크
+                // PRIZM 내부 루프(필요시)
+    }
+}
+
+void side(float mm)        // mm=±1000 만 넘기면 됨
+{
+    startSide(mm);                   // ① 주행 시작
+
+    while (motion.active) {          // ② 끝날 때까지 대기
+        controller.run();
+        motionUpdate();
+
+    }
+}
+
+
+
+
+void liftUp()
+{
+  exc.resetEncoders(EXP_ID);
+  exc.setMotorTarget(EXP_ID, 1, 270, -1440*1.5);
+  delay(1000);
+}
+
+
+void liftDown()
+{
+  exc.resetEncoders(EXP_ID);
+  exc.setMotorTarget(EXP_ID, 1, 270, 1440*1.5);
+  delay(1000);
 }
 
 
@@ -562,7 +900,7 @@ void setup()
   //PRIZM Board
   prizm.PrizmBegin();
   prizm.resetEncoders();
-  prizm.setMotorInvert(1,1);
+  prizm.setMotorInvert(1,0);
   prizm.setMotorInvert(2,1);
 
   //I2C
@@ -575,6 +913,10 @@ void setup()
   odomThread.onRun(updateOdom);
   odomThread.setInterval(20);   // 50 Hz
   controller.add(&odomThread);
+
+  //line sensor
+  pinMode(LINE_PIN, INPUT);
+
   setPoseFirst(); //처음 위치를 설정합니다. 
 }
 
@@ -604,27 +946,107 @@ void loop()
 
 
     //forward(1000);
+    //forward(-1000);
     //side(1000);
+    //side(-1000);
     //driveUntilFront(1000, 500);
 
 
-/*
+
     //1 ~ 6구간 모두 스캔 후 palletdest 변수에 저장합니다.
     //만약 QR스캔이 제대로 안 돼서 변수에 2-3개만 저장된다면 다시 스캔해야하는데, 어떻게 구현해야할까
     for(int i = 1; i < 7; i++){ 
-        int tmp =0;
-        tmp = tmp + scanOneZone(i);
+        int tmp = 0;
+        int ind[7] = {0, 6, 5, 2, 4, 1, 3};
+        tmp = tmp + scanOneZone(ind[i]);
         if (tmp == 4) break;
+    }
+/*
+1구역 : 350, 1200
+2구역 : 1050, 1200
+3구역 : 350, 200
+4구역 : 1050, 200
+5구역 : 2600, 1200
+6구역 : 3050, 1200
+시작/종료 구역 : 3150, 250
+*/
+
+/*
+
+    // 6번
+    lastQR = 0;                        // 1) QR 초기화
+    gotoWorldY(700);
+    driveUntilRightLineForce(-500);
+    setPoseX(3050);
+    driveUntilFrontLE(1000, 100);     
+   
+    if (lastQR != 0) {                 // 5) QR이 실제로 읽혔을 때만
+        palletDest[6] = lastQR;  //    배열에 기록
+        setPoseY();                    //    Y 보정
+    }
+
+    // 5번
+    lastQR = 0;                        // 1) QR 초기화
+    gotoWorldY(700);
+    driveUntilRightLine(-500);
+    setPoseX(2600);
+    driveUntilFrontLE(1000, 100);        
+    if (lastQR != 0) {                 // 5) QR이 실제로 읽혔을 때만
+        palletDest[5] = lastQR;  //    배열에 기록
+        setPoseY();                    //    Y 보정
+    }
+
+     // 2번
+    lastQR = 0;                        // 1) QR 초기화
+    gotoWorldY(700);
+    driveUntilRightLine(-1500);
+    setPoseX(1050);
+    driveUntilFrontLE(1000, 100);        
+    if (lastQR != 0) {                 // 5) QR이 실제로 읽혔을 때만
+        palletDest[2] = lastQR;  //    배열에 기록
+        setPoseY();                    //    Y 보정
+    }
+
+    //4번
+    lastQR = 0;                        // 1) QR 초기화
+    gotoWorldY(700);
+    driveUntilFrontGE(-1000, 1300);        
+    if (lastQR != 0) {                 // 5) QR이 실제로 읽혔을 때만
+        palletDest[4] = lastQR;  //    배열에 기록
+        setPoseY();                    //    Y 보정
     }
 
 
-    while(true){} //palletdest의 인덱스와 데이터가 같다면 끝냅니다.
+     //1번
+    lastQR = 0;                        // 1) QR 초기화
+    gotoWorldY(700);
+    setPoseX(350);
+    driveUntilRightLine(-1500);
+    driveUntilFrontLE(1000, 100);        
+    if (lastQR != 0) {                 // 5) QR이 실제로 읽혔을 때만
+        palletDest[1] = lastQR;  //    배열에 기록
+        setPoseY();                    //    Y 보정
+    }
+
+    //3번
+    lastQR = 0;                        // 1) QR 초기화
+    gotoWorldY(700);
+    driveUntilFrontGE(-1000, 1300);        
+    if (lastQR != 0) {                 // 5) QR이 실제로 읽혔을 때만
+        palletDest[3] = lastQR;  //    배열에 기록
+        setPoseY();                    //    Y 보정
+    }
+
+
+
+*/
+
+    while(true){ //palletdest의 인덱스와 데이터가 같다면 끝냅니다.
 
         int flag = 0;
 
         if (isAllPalletsDone(palletDest)) //모든 팔레트가 제자리에 있다면, 
         {
-            Serial.println("모든 팔레트가 제자리! 루프 종료");
             break;                       // while 탈출
         }
 
@@ -651,13 +1073,13 @@ void loop()
                 break;
         }
     }
+
     
     //집으로 돌아가요.
-    Serial("집으로 돌아갑니다.")
+    Serial.println("집으로 돌아갑니다.");
     goHome();
 
-    */
 
 
-    //prizm.PrizmEnd();
+   // prizm.PrizmEnd();
 }
