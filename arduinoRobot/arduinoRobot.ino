@@ -105,7 +105,6 @@ const int   world_Y = 1400;
 const int   robotHeight = 288; //세로길이, 바꿔야함
 const int   robotWidth = 288; //가로길이, 바꿔야함
 
-
 //틱 당 mm [tick/mm]
 #define MM_PER_TICK_FWD   ( (PI * WHEEL_D_FWD ) / TICKS_REV )
 #define MM_PER_TICK_SIDE  ( (PI * WHEEL_D_SIDE) / TICKS_REV )
@@ -116,7 +115,7 @@ inline long mm2tickSIDE(float mm) { return lround(mm / MM_PER_TICK_SIDE); } //mm
 inline float deg2tick(float deg) { return (deg * TICKS_REV) / 360.0f; }
 inline float tick2deg(float tick){ return (tick * 360.0f) / (float)TICKS_REV; }
 
-
+int palletDest[7] = {0,0,0,0,0,0,0}; //구역 별 팔레트 목적지, 0번 인덱스는 아마 사용 안 할듯
 
 
 //x, y를 업데이트 합니다.
@@ -453,12 +452,12 @@ int findNearestEmptyRegion(const int dest[7], double robotX)
 
 
 
-int palletDest[7] = {0,0,0,0,0,0,0}; //구역 별 팔레트 목적지, 0번 인덱스는 아마 사용 안 할듯
-
 
 
 //const int REGION_X[7] = { 0,350,1050,350,1050,2600,3050 };
 
+
+//어떠한 한 구역에 가서 QR을 스캔한 후 스캔 성공 여부를 리턴한다.
 bool scanOneZone(uint8_t zoneIdx)
 {
     lastQR = 0;                        // 1) QR 초기화
@@ -478,6 +477,8 @@ bool scanOneZone(uint8_t zoneIdx)
     return false;                      // QR 없음(0) → 실패
 }
 
+
+//어떠한 한 구역에 간다.
 void goOneZone(uint8_t zoneIdx)
 {
     lastQR = 0;                        // 1) QR 초기화
@@ -490,9 +491,58 @@ void goOneZone(uint8_t zoneIdx)
     }
 }
 
+//집으로 돌아간다.
+void goHome(uint8_t zoneIdx)
+{
+    gotoWorldY(700);                   // 2) Y 중앙선
+    gotoWorldX(3150);     // 3) X 정렬
+}
 
 
-int tmp =0; //임시 저장용
+
+
+//어떠한 한 구역에 가서 리프트를 올린 후, 타겟 구역에 놓는다.
+void pickupAndDrop(uint8_t zoneIdx, uint8_t zoneIdxTarget)
+{
+    lastQR = 0;                        // 1) QR 초기화
+    gotoWorldY(700);                   // 2) Y 중앙선
+    gotoWorldX(REGION_X[zoneIdx]);     // 3) X 정렬
+    if(zoneIdx == 3 || zoneIdx == 4){
+        driveUntilFrontGE(-1000, 1300);
+        liftUp();
+    }else{
+        driveUntilFrontLE(1000, 100);
+        liftUp();
+    }
+
+    gotoWorldY(700);                   // 2) Y 중앙선
+    gotoWorldX(REGION_X[zoneIdxTarget]);     // 3) X 정렬
+    if(zoneIdxTarget == 3 || zoneIdxTarget == 4){
+        driveUntilFrontGE(-1000, 1300);
+        liftDown();
+    }else{
+        driveUntilFrontLE(1000, 100);
+        liftDown();
+    }
+    palletDest[zoneIdxTarget] = zoneIdx;
+    palletDest[zoneIdx] = 0;
+}
+
+
+
+
+/*  true  →  더 이상 옮길 팔레트 없음
+    false →  아직 옮겨야 할 팔레트 있음                      */
+bool isAllPalletsDone(const int dest[7])
+{
+    for (int i = 1; i <= 6; ++i) {
+        if (dest[i] != 0 && dest[i] != i)
+            return false;          // 제자리도 아니고 비어 있지도 않음
+    }
+    return true;                   // 모두 자리 완료
+}
+
+
 
 void setup() 
 {
@@ -545,6 +595,7 @@ void setup()
 
 
 
+
 void loop()
 {
     controller.run(); //thread를 이용해 다른 함수를 실행하더라도 x, y를 업데이트합니다.
@@ -552,174 +603,56 @@ void loop()
     motionUpdate();
 
 
-    forward(1000);
+    //forward(1000);
     //side(1000);
     //driveUntilFront(1000, 500);
 
-    /*
-    for(int i = 1; i < 7; i++){ //1 ~ 6구간 모두 스캔 후 palletdest 변수에 저장함.
+    //1 ~ 6구간 모두 스캔 후 palletdest 변수에 저장합니다.
+    //만약 QR스캔이 제대로 안 돼서 변수에 2-3개만 저장된다면 다시 스캔해야하는데, 어떻게 구현해야할까
+    for(int i = 1; i < 7; i++){ 
+        int tmp =0;
         tmp = tmp + scanOneZone(i);
         if (tmp == 4) break;
     }
 
 
+    while(true){} //palletdest의 인덱스와 데이터가 같다면 끝냅니다.
 
-    if(!findNearestMovableRegion(palletDest, x_mm)){
-        
+        int flag = 0;
+
+        if (isAllPalletsDone(palletDest)) //모든 팔레트가 제자리에 있다면, 
+        {
+            Serial.println("모든 팔레트가 제자리! 루프 종료");
+            break;                       // while 탈출
+        }
+
+        //만약 옮길 수 있는 팔레트가 없다면, 
+        if(findNearestMovableRegion(palletDest, x_mm) == 0)
+        {
+            flag = 1; //옮길 수 없다.
+        }
+        else //있다면,
+        {
+            flag = 0; //옮길 수 있다.
+        }
+
+        switch(flag)
+        {
+            case 0: //옮길 수 있을 때 그것을 옮긴다.
+                pickupAndDrop(findNearestMovableRegion(palletDest, x_mm), palletDest[findNearestMovableRegion(palletDest, x_mm)]);
+                break;
+
+            case 1: //옮길 수 없을 때 그냥 가장 가까운 팔레트를 아무 곳에 둔다.
+                int loadedregion = findNearestLoadedRegion(palletDest, x_mm);
+                int emptyregion = findNearestEmptyRegion(palletDest, x_mm);
+                pickupAndDrop(loadedregion, emptyregion);
+                break;
+        }
     }
-
-*/
-    //gotoWorldY(700); //Y축 센터로 이동
-
-
-
-
-/*
-    liftUp();
-    delay(1000);
-    liftDown();
-    delay(1000);
-*/
-
-/*
-
-
-    switch (test) //테스트용
-    {
-        case 0: //앞으로 1미터
-            if (!motion.active) {
-                startForward(1000);
-                test = 1; 
-            }
-            break;
-
-        case 1:
-            float dist = readDistanceSensorFront();  // mm 단위
-            if (dist > 0 && dist <= 500) {
-                prizm.setMotorSpeeds(0, 0);
-                motion.active = false;
-                test = 2;
-            } else if (!motion.active) {
-                test = 2;
-                }
-
-            break;
-            
-
-        case 2:
-            if (!motion.active) {
-                prizm.PrizmEnd();
-            }
-
-            break;
-
-        case 3:
-            if (!motion.active) {
-                prizm.PrizmEnd();
-            }
-
-            break;
-    }
-*/
-    /*
-    switch (test) //테스트용
-    {
-        case 0: //앞으로 1미터
-            if (!motion.active) {
-                startForward(1000);
-                test = 1; 
-            }
-            break;
-
-        case 1: //뒤로 1미터
-            if (!motion.active) {
-                gotoWorldY(700);
-                //startForwardUntil(1000, readDistanceSensorFront(), LE, 500);
-                test = 2;
-            }
-            break;
-
-        case 2: //오른쪽으로 1미터
-            if (!motion.active) {
-                startSide(1000);
-                test = 3;
-            }
-            break;
-
-        case 3: //왼쪽으로 1미터
-            if (!motion.active) {
-                startForward(-1000);
-                test = 4;
-            }
-            break;
-
-        case 4: //일단 1미터 가는데, readDistanceSensorFront <= 500이면 멈추기
-            if (!motion.active) {
-                startSide(-1000);
-                test = 5;
-            }
-            break;
-
-        case 5:
-            if (!motion.active) {
-                prizm.PrizmEnd();
-            }
-
-            break;
-    }
-*/
-
-
-/*
-    switch (step1_scanPalette) //팔레트 스캔하기
-    {
-        case 0: //Y축 중심으로 이동
-            if (!motion.active) {
-                gotoWorldY(700);
-                step1_scanPalette = 1; // 다음 스텝으로 넘어가기
-            }
-            break;                
-
-        case 1: //QR 데이터 초기화
-            if (!motion.active) {
-                lastQR = 0;
-                step1_scanPalette = 2;
-            }
-            break;
-
-        case 2: //X좌표 맞추기
-            if (!motion.active) {
-                gotoWorldX(3050); //X = 3050
-                step1_scanPalette = 3;
-            }
-            break;
-
-        case 3: //Y좌표 맞추기 (6구역 진입)
-            if (!motion.active) {
-                gotoWorldY(1050); //X = 3050
-                step1_scanPalette = 4;
-            }
-            break;
-
-        case 4: //QR 스캐닝, 위치 오차 보정
-            if (!motion.active) {
-                palletDest[6] = lastQR; //QR을 스캔함
-                setPoseY(); // 센서 이용하여 위치 오차 보정
-                step1_scanPalette = 5;
-            }
-            break;
-
-        case 5:
-            step2 = 1; // 다시 짤 예정
-            break;
-
-
-    }
-
-    */
-
-
-
+    
+    //집으로 돌아가요.
+    Serial("집으로 돌아갑니다.")
+    goHome();
 
     prizm.PrizmEnd();
 }
