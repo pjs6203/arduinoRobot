@@ -321,7 +321,7 @@ int16_t readDistanceSensorUltra1W()
     /* b) 바로 INPUT 으로 전환해 에코 폭 측정
        - pulseIn 타임아웃 25 ms ≈ 4.3 m */
     pinMode(ULTRA_SIG_PIN, INPUT);
-unsigned long t = pulseIn(ULTRA_SIG_PIN, HIGH, 25000UL);  // 25 000 µs = 25 ms
+    unsigned long t = pulseIn(ULTRA_SIG_PIN, HIGH, 25000UL);  // 25 000 µs = 25 ms
 
 
     /* c) 실패 처리 */
@@ -585,10 +585,10 @@ bool scanOneZone(uint8_t zoneIdx)
     }
 
     if(readDistanceSensorUltra1W() <= 100 && lastQR == 0){
-        startForward(-200);
-        startForward(200);
+        forward(-200);
+        forward(200);
+        readQRdataTimeout(500);
     }
-    readQRdataTimeout(2000);
 
     if (lastQR != 0) {                 // 5) QR이 실제로 읽혔을 때만
         palletDest[zoneIdx] = lastQR;  //    배열에 기록
