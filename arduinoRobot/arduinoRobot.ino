@@ -76,10 +76,14 @@ VL53L0X distanceSensorFront;
 #define VERBOSE 1
 
 //가감속도 설정
-#define TARGET_SPD_DEG 100 //목표 속도, 0 ~ 720 [deg/s] 100
+#define TARGET_SPD_DEG 360 //목표 속도, 0 ~ 720 [deg/s] 100
 #define MIN_SPD_DEG 60 //이동 시 최소 속도를 설정합니다. [deg/s] 60
-#define ACCEL_DPS2 50 //가감속도 [deg/s^2] 50
+#define ACCEL_DPS2 150 //가감속도 [deg/s^2] 50
 #define LOOP_DT_MS 5 //적분 주기를 설정합니다. [ms]
+
+#define TARGET_SPD_M1 80   // 모터 1 (전 · 후진) 최고 deg/s
+#define TARGET_SPD_M2 250   // 모터 2 (좌 · 우 이동) 최고 deg/s
+
 
 //바퀴 지름 설정
 #define WHEEL_D_FWD   100.0f // 앞뒤용 휠 지름 [mm]
@@ -177,18 +181,23 @@ void motionUpdate()
 
     long remain = labs(motion.tgtTicks) - progress;
     if (remain < 0) remain = 0;
+/* ── 속도 업데이트 ─────────────────── */
 
-    /* ── 속도 업데이트 ─────────────────── */
-    float dStop  = deg2tick((motion.spdDeg * motion.spdDeg) /
-                            (2.0f * ACCEL_DPS2));
-    bool braking = (remain <= dStop);
+/* a) 이번 모션에서 허용할 최고 속도 선택 */
+float vmax = (motion.motIdx == 1) ? TARGET_SPD_M1
+                                  : TARGET_SPD_M2;
 
-    if (!braking)
-        motion.spdDeg = min(motion.spdDeg + ACCEL_DPS2 * dt,
-                            (float)TARGET_SPD_DEG);
-    else
-        motion.spdDeg = max(motion.spdDeg - ACCEL_DPS2 * dt,
-                            (float)MIN_SPD_DEG);
+/* b) 남은 거리로부터 ‘정지에 필요한 거리’ 계산 */
+float dStop  = deg2tick((motion.spdDeg * motion.spdDeg) /
+                        (2.0f * ACCEL_DPS2));
+bool braking = (remain <= dStop);
+
+/* c) 가속/감속 */
+if (!braking)
+    motion.spdDeg = min(motion.spdDeg + ACCEL_DPS2 * dt, vmax);   // ★ vmax 사용
+else
+    motion.spdDeg = max(motion.spdDeg - ACCEL_DPS2 * dt,
+                        (float)MIN_SPD_DEG);
 
     int cmd = (int)motion.spdDeg * motion.dir;
     prizm.setMotorSpeeds(
@@ -477,7 +486,7 @@ void setPoseFirst()
     Serial.print(F("y_mm : "));
     Serial.println(y_mm);
 
-    x_mm = world_X - 200 - readDistanceSensorRight();
+    x_mm = world_X - 220 - readDistanceSensorRight();
     Serial.print(F("x_mm : "));
     Serial.println(x_mm);
 
@@ -508,11 +517,14 @@ void setPoseX(int mm = -1)
     }
 }
 
-
-
-
-
 const int REGION_X[7] = { 0,350,1050,350,1050,2350,3050 };
+
+
+
+
+
+
+
 
 
 /* 1) 지금 바로 옮길 수 있는 팔레트가 있는 가장 가까운 구역 */
@@ -564,8 +576,39 @@ int findNearestEmptyRegion(const int dest[7], double robotX)
 }
 
 
+/* ④ 목적지가 이미 차 있어서 다른 팔레트들을 막고 있는 구역 찾기
+   · dest[i]     ≠ 0  (팔레트가 있고)
+   · dest[dest[i]] ≠ 0 (그 팔레트의 목적지도 다른 팔레트가 점유)
+   가장 가까운 구역 하나를 돌려준다. 없으면 0 */
+int findBlockingRegion(const int dest[7], double robotX)
+{
+    int    idx  = 0;          // 0 = 못 찾음
+    double minD = 1e9;
+
+    for (int i = 1; i <= 6; ++i) {
+        int target = dest[i];
+        if (target == 0)  continue;          // 빈 구역
+        if (target == i) continue;           // 제자리 → 안 막힘  ★
+        if (dest[target] == 0) continue;     // 목적지가 비어 있음
+
+        double d = fabs(REGION_X[i] - robotX);
+        if (d < minD) { minD = d; idx = i; }
+    }
+    return idx;   // 예: 위 배열·좌표면  idx == 3
+}
 
 
+
+
+
+void setPoseX_region(int index)
+{  
+    x_mm = REGION_X[index] - 220 - readDistanceSensorRight();
+    Serial.print(F("x_mm : "));
+    Serial.println(x_mm);
+    Serial.println(F("X set complete"));
+    
+}
 
 
 //const int REGION_X[7] = { 0,350,1050,350,1050,2600,3050 };
@@ -576,10 +619,12 @@ bool scanOneZone(uint8_t zoneIdx)
 {
     lastQR = 0;                        // 1) QR 초기화
     gotoWorldY(700);                   // 2) Y 중앙선
+    lastQR = 0; 
     gotoWorldX(REGION_X[zoneIdx]);     // 3) X 정렬
 
+    //setPoseX_region(zoneIdx);
     if(zoneIdx == 3 || zoneIdx == 4 ){
-        driveUntilFrontGE(-10000, 950); 
+        driveUntilFrontGE(-10000, 975); 
     }else{
         driveUntilFrontLE(10000, 50); 
     }
@@ -590,36 +635,17 @@ bool scanOneZone(uint8_t zoneIdx)
     if(zoneIdx == 3 || zoneIdx == 4 ){
             forward(200);
             forward(-200);
-            driveUntilRightLE(100, 50);
-            driveUntilRightGE(-100, 50);
-            if(lastQR != 0) break;
-            forward(200);
-            forward(-200);
-            driveUntilRightLE(100, 50);
-            driveUntilRightGE(-100, 50);
-            if(lastQR != 0) break;
-            forward(200);
-            forward(-200);
-            driveUntilRightLE(100, 50);
-            driveUntilRightGE(-100, 50);
+            //driveUntilRightLE(100, 10);
+            //driveUntilRightGE(-100, 30);
             if(lastQR != 0) break;
     
     }else{
             forward(-200);
             forward(200);
-            driveUntilRightLE(100, 50);
-            driveUntilRightGE(-100, 50);
+            //driveUntilRightLE(100, 10);
+            //driveUntilRightGE(-100, 30);
             if(lastQR != 0) break;
-            forward(-200);
-            forward(200);
-            driveUntilRightLE(100, 50);
-            driveUntilRightGE(-100, 50);
-            if(lastQR != 0) break;
-            forward(-200);
-            forward(200);
-            driveUntilRightLE(100, 50);
-            driveUntilRightGE(-100, 50);
-            if(lastQR != 0) break;
+
     
         }
 
@@ -628,6 +654,7 @@ bool scanOneZone(uint8_t zoneIdx)
     if (lastQR != 0) {                 // 5) QR이 실제로 읽혔을 때만
         palletDest[zoneIdx] = lastQR;  //    배열에 기록
         setPoseY();                    //    Y 보정
+        lastQR = 0; 
         return true;                   //    성공
     }
     return false;                      // QR 없음(0) → 실패
@@ -652,6 +679,7 @@ void goHome()
 {
     gotoWorldY(700);                   // 2) Y 중앙선
     gotoWorldX(3150);     // 3) X 정렬
+    gotoWorldY(250);
 }
 
 
@@ -664,23 +692,23 @@ void pickupAndDrop(uint8_t zoneIdx, uint8_t zoneIdxTarget)
     gotoWorldY(700);                   // 2) Y 중앙선
     gotoWorldX(REGION_X[zoneIdx]);     // 3) X 정렬
     if(zoneIdx == 3 || zoneIdx == 4){
-        driveUntilFrontGE(-1000, 1300);
+        driveUntilFrontGE(-10000, 975);
         liftUp();
     }else{
-        driveUntilFrontLE(1000, 100);
+        driveUntilFrontLE(10000, 50);
         liftUp();
     }
 
     gotoWorldY(700);                   // 2) Y 중앙선
     gotoWorldX(REGION_X[zoneIdxTarget]);     // 3) X 정렬
     if(zoneIdxTarget == 3 || zoneIdxTarget == 4){
-        driveUntilFrontGE(-1000, 1300);
+        driveUntilFrontGE(-10000, 975);
         liftDown();
     }else{
-        driveUntilFrontLE(1000, 100);
+        driveUntilFrontLE(10000, 50);
         liftDown();
     }
-    palletDest[zoneIdxTarget] = zoneIdx;
+    palletDest[zoneIdxTarget] = palletDest[zoneIdx];
     palletDest[zoneIdx] = 0;
 }
 
@@ -1085,11 +1113,26 @@ void loop()
                 pickupAndDrop(findNearestMovableRegion(palletDest, x_mm), palletDest[findNearestMovableRegion(palletDest, x_mm)]);
                 break;
 
+            /*
             case 1: //옮길 수 없을 때 그냥 가장 가까운 팔레트를 아무 곳에 둔다.
                 int loadedregion = findNearestLoadedRegion(palletDest, x_mm);
                 int emptyregion = findNearestEmptyRegion(palletDest, x_mm);
                 pickupAndDrop(loadedregion, emptyregion);
                 break;
+                */
+
+            case 1: { // 옮길 수 있는 팔레트가 하나도 없을 때
+                int blocking = findBlockingRegion(palletDest, x_mm);   // 원인 팔레트
+                int empty    = findNearestEmptyRegion(palletDest, x_mm);
+
+                /* 예외 처리: 만약 empty==0 이면 모든 구역이 가득 찬 상태.
+                - 임시 대기 구역(예: 0번 위치) 같은 정책을 따로 정해 둔 경우엔
+                그곳으로 옮기도록 분기해 주세요. */
+                if (blocking != 0 && empty != 0)
+                    pickupAndDrop(blocking, empty);
+                    break;
+}
+
         }
     }
 
@@ -1100,5 +1143,5 @@ void loop()
 
 
 
-   // prizm.PrizmEnd();
+   prizm.PrizmEnd();
 }
