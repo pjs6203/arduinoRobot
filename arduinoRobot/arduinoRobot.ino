@@ -76,9 +76,9 @@ VL53L0X distanceSensorFront;
 #define VERBOSE 1
 
 //가감속도 설정
-#define TARGET_SPD_DEG 250 //목표 속도, 0 ~ 720 [deg/s] 100
-#define MIN_SPD_DEG 100 //이동 시 최소 속도를 설정합니다. [deg/s] 60
-#define ACCEL_DPS2 100 //가감속도 [deg/s^2] 50
+#define TARGET_SPD_DEG 100 //목표 속도, 0 ~ 720 [deg/s] 100
+#define MIN_SPD_DEG 60 //이동 시 최소 속도를 설정합니다. [deg/s] 60
+#define ACCEL_DPS2 50 //가감속도 [deg/s^2] 50
 #define LOOP_DT_MS 5 //적분 주기를 설정합니다. [ms]
 
 //바퀴 지름 설정
@@ -283,7 +283,7 @@ int16_t readDistanceSensorRight()
     float dist_cm = 27.728f * powf(v, -1.2045f);
 
     /* 6) mm 단위로 반환 */
-    return (int16_t)(dist_cm * 10.0f + 0.5f) - 195;   // 반올림, 보정값 추가
+    return (int16_t)(dist_cm * 10.0f + 0.5f) - 95;   // 반올림, 보정값 추가
 }
 
 
@@ -403,8 +403,8 @@ void updateOdom()
     Serial.print(" line : ");
     Serial.print(digitalRead(4));
 
-    //Serial.print(" ultsonic : ");
-    //Serial.println(readDistanceSensorUltra1W());
+    Serial.print(" ultsonic : ");
+    Serial.println(readDistanceSensorUltra1W());
 }
 
 
@@ -512,7 +512,7 @@ void setPoseX(int mm = -1)
 
 
 
-const int REGION_X[7] = { 0,350,1050,350,1050,2300,3050 };
+const int REGION_X[7] = { 0,350,1050,350,1050,2350,3050 };
 
 
 /* 1) 지금 바로 옮길 수 있는 팔레트가 있는 가장 가까운 구역 */
@@ -579,15 +579,50 @@ bool scanOneZone(uint8_t zoneIdx)
     gotoWorldX(REGION_X[zoneIdx]);     // 3) X 정렬
 
     if(zoneIdx == 3 || zoneIdx == 4 ){
-        driveUntilFrontGE(-10000, 1250); 
+        driveUntilFrontGE(-10000, 950); 
     }else{
-        driveUntilFrontLE(10000, 150); 
+        driveUntilFrontLE(10000, 50); 
     }
 
-    if(readDistanceSensorUltra1W() <= 100 && lastQR == 0){
-        forward(-200);
-        forward(200);
-        readQRdataTimeout(500);
+
+    while(readDistanceSensorUltra1W() <= 50 && lastQR == 0){
+
+    if(zoneIdx == 3 || zoneIdx == 4 ){
+            forward(200);
+            forward(-200);
+            driveUntilRightLE(100, 50);
+            driveUntilRightGE(-100, 50);
+            if(lastQR != 0) break;
+            forward(200);
+            forward(-200);
+            driveUntilRightLE(100, 50);
+            driveUntilRightGE(-100, 50);
+            if(lastQR != 0) break;
+            forward(200);
+            forward(-200);
+            driveUntilRightLE(100, 50);
+            driveUntilRightGE(-100, 50);
+            if(lastQR != 0) break;
+    
+    }else{
+            forward(-200);
+            forward(200);
+            driveUntilRightLE(100, 50);
+            driveUntilRightGE(-100, 50);
+            if(lastQR != 0) break;
+            forward(-200);
+            forward(200);
+            driveUntilRightLE(100, 50);
+            driveUntilRightGE(-100, 50);
+            if(lastQR != 0) break;
+            forward(-200);
+            forward(200);
+            driveUntilRightLE(100, 50);
+            driveUntilRightGE(-100, 50);
+            if(lastQR != 0) break;
+    
+        }
+
     }
 
     if (lastQR != 0) {                 // 5) QR이 실제로 읽혔을 때만
