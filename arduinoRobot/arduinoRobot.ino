@@ -81,9 +81,11 @@ VL53L0X distanceSensorFront;
 #define ACCEL_DPS2 150 //가감속도 [deg/s^2] 50
 #define LOOP_DT_MS 5 //적분 주기를 설정합니다. [ms]
 
-#define TARGET_SPD_M1 80   // 모터 1 (전 · 후진) 최고 deg/s
+#define TARGET_SPD_M1 160   // 모터 1 (전 · 후진) 최고 deg/s
 #define TARGET_SPD_M2 250   // 모터 2 (좌 · 우 이동) 최고 deg/s
 
+#define BUZZ_PIN 7        // 부저가 연결된 디지털 핀
+#define BUZZ_FREQ 2000    // 울릴 주파수(Hz)  ─ tone() 사용 시
 
 //바퀴 지름 설정
 #define WHEEL_D_FWD   100.0f // 앞뒤용 휠 지름 [mm]
@@ -225,6 +227,18 @@ if (motion.useCond && motion.condFn)
     }
 }
 
+
+
+/* ----------------------------------------------------
+   지정 시간(ms) 동안 부저를 울린 뒤 자동으로 멈춘다
+   (다른 작업은 모두 멈춤)                      
+   ---------------------------------------------------- */
+void buzzBlocking(unsigned long dur_ms)
+{
+    tone(BUZZ_PIN, BUZZ_FREQ);   // 부저 ON
+    delay(dur_ms);               // ★ 블로킹
+    noTone(BUZZ_PIN);            // 부저 OFF
+}
 
 
 
@@ -634,21 +648,24 @@ bool scanOneZone(uint8_t zoneIdx)
 
     if(zoneIdx == 3 || zoneIdx == 4 ){
             forward(200);
+            if(lastQR != 0) break;
             forward(-200);
-            //driveUntilRightLE(100, 10);
-            //driveUntilRightGE(-100, 30);
+            if(lastQR != 0) break;
+            driveUntilRightLE(100, 10);
+            if(lastQR != 0) break;
+            driveUntilRightGE(-100, 5);
             if(lastQR != 0) break;
     
     }else{
             forward(-200);
-            forward(200);
-            //driveUntilRightLE(100, 10);
-            //driveUntilRightGE(-100, 30);
             if(lastQR != 0) break;
-
-    
+            forward(200);
+            if(lastQR != 0) break;
+            driveUntilRightLE(100, 10);
+            if(lastQR != 0) break;
+            driveUntilRightGE(-100, 5);
+            if(lastQR != 0) break;
         }
-
     }
 
     if (lastQR != 0) {                 // 5) QR이 실제로 읽혔을 때만
@@ -1140,6 +1157,7 @@ void loop()
     //집으로 돌아가요.
     Serial.println("집으로 돌아갑니다.");
     goHome();
+    buzzBlocking(1000);
 
 
 
