@@ -78,13 +78,13 @@ VL53L0X distanceSensorFront;
 //가감속도 설정
 #define TARGET_SPD_DEG 360 //목표 속도, 0 ~ 720 [deg/s] 100
 #define MIN_SPD_DEG 60 //이동 시 최소 속도를 설정합니다. [deg/s] 60
-#define ACCEL_DPS2 150 //가감속도 [deg/s^2] 50
+#define ACCEL_DPS2 100 //가감속도 [deg/s^2] 50
 #define LOOP_DT_MS 5 //적분 주기를 설정합니다. [ms]
 
 #define TARGET_SPD_M1 160   // 모터 1 (전 · 후진) 최고 deg/s
 #define TARGET_SPD_M2 250   // 모터 2 (좌 · 우 이동) 최고 deg/s
 
-#define BUZZ_PIN 7        // 부저가 연결된 디지털 핀
+#define BUZZ_PIN A3        // 부저가 연결된 디지털 핀
 #define BUZZ_FREQ 2000    // 울릴 주파수(Hz)  ─ tone() 사용 시
 
 //바퀴 지름 설정
@@ -651,9 +651,9 @@ bool scanOneZone(uint8_t zoneIdx)
             if(lastQR != 0) break;
             forward(-200);
             if(lastQR != 0) break;
-            driveUntilRightLE(100, 10);
+            //driveUntilRightLE(100, 10);
             if(lastQR != 0) break;
-            driveUntilRightGE(-100, 5);
+            //driveUntilRightGE(-100, 5);
             if(lastQR != 0) break;
     
     }else{
@@ -661,9 +661,9 @@ bool scanOneZone(uint8_t zoneIdx)
             if(lastQR != 0) break;
             forward(200);
             if(lastQR != 0) break;
-            driveUntilRightLE(100, 10);
+            //driveUntilRightLE(100, 10);
             if(lastQR != 0) break;
-            driveUntilRightGE(-100, 5);
+            //driveUntilRightGE(-100, 5);
             if(lastQR != 0) break;
         }
     }
